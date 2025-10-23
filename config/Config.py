@@ -14,15 +14,14 @@ class Config:
     CACHE_TTL = int(os.getenv('CACHE_TTL', 3600))  # 缓存过期时间（秒）
 
     # 线程池配置
-    SCHEDULER_THREADS = int(os.getenv('SCHEDULER_THREADS', 1))
     CACHE_TASK_THREADS = int(os.getenv('CACHE_TASK_THREADS', 5))
 
     # OPC配置
-    OPC_SERVER_URL = os.getenv('OPC_SERVER_URL', 'opc.tcp://localhost:4840')
-    OPC_TIMEOUT = int(os.getenv('OPC_TIMEOUT', 30))
-
-    # 日志配置
-    LOG_LEVEL = os.getenv('LOG_LEVEL', 'INFO')
+    SERVER_NAME = os.getenv('SERVER_NAME', 'SpringOPCServer')
+    PROG_ID = os.getenv('PROG_ID', 'YourCompany.OPCServer')
+    READ = os.getenv('READ', 'read')
+    UPDATE_RATE = int(os.getenv('UPDATE_RATE', 1000))
+    CLASS_ID = os.getenv('CLASS_ID', '10000')
 
     @classmethod
     def to_dict(cls) -> Dict[str, Any]:
@@ -31,7 +30,6 @@ class Config:
             key: value for key, value in cls.__dict__.items()
             if not key.startswith('_') and not callable(value)
         }
-
 
 # 创建配置实例
 config = Config()

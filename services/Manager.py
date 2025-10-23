@@ -6,22 +6,22 @@ from cachetools import TTLCache
 
 from models.DataView import DataView
 from services.DataViewService import DataViewService
-
+from config.Config import Config
 
 class Manager:
     def __init__(self):
         self.logger = logging.getLogger(self.__class__.__name__)
 
         # 配置参数
-        self.cache_frequency = 10  # 缓存刷新频率（秒）
-        self.database_frequency = 20  # 数据库保存频率（秒）
+        self.cache_frequency = Config.CACHE_FREQUENCY  # 缓存刷新频率（秒）
+        self.database_frequency = Config.DATABASE_FREQUENCY  # 数据库保存频率（秒）
 
-        # 线程池
+        # 线程池 schedule有两个一个是缓存的一个是数据库的
         self.scheduler_executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="Manager-Scheduler")
-        self.task_executor = ThreadPoolExecutor(max_workers=5, thread_name_prefix="Manager-Task")
+        self.task_executor = ThreadPoolExecutor(max_workers=Config.CACHE_TASK_THREADS, thread_name_prefix="Manager-Task")
 
         # 缓存
-        self.user_cache = TTLCache(maxsize=100, ttl=3600)
+        self.user_cache = TTLCache(maxsize=Config.CACHE_MAX_SIZE, ttl=Config.CACHE_TTL)
 
         # 控制标志
         self._running = False

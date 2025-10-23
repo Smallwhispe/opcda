@@ -37,9 +37,10 @@ class ErrorCode(Enum):
     UNLINK_SUCCESS = ("000003", "断连成功")
     UNLINK_FAILURE = ("000004", "断连失败")
     VALID_FAILURE = ("000005", "参数验证失败")
-    NOT_PARAM = ("000006", "无参数")
+    NO_PARAM = ("000006", "无参数")
     SERVICE_FAILURE = ("000007", "服务调用失败")
-    NOT_REQUEST = ("000008", "没有请求体")
+    NO_REQUEST = ("000008", "没有请求体")
+    NO_DATA = ("000009", "未找到相关数据")
 
     def __init__(self, code: str, msg: str):
         self._code = code

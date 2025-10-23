@@ -14,10 +14,11 @@ logger = logging.getLogger()
 @dataViewBp.route('/modelPredict', methods=['POST'])
 def modelPredict():
     try:
+        if not request.args:
+            return jsonify(ResultEntityMethod.buildFailedResult(ErrorCode.NOT_REQUEST.get_code(), ErrorCode.NOT_REQUEST.get_msg(),None)), 400
         data = request.get_json()
-
         if not data:
-            return jsonify(ResultEntityMethod.buildFailedResult(ErrorCode.NOT_PARAM.get_code(), ErrorCode.NOT_PARAM.get_msg(), None)), 400
+            return jsonify(ResultEntityMethod.buildFailedResult(ErrorCode.NO_PARAM.get_code(), ErrorCode.NO_PARAM.get_msg(), None)), 400
         modelPredictReq = ModelPredictReq.model_validate(data)
 
         # 调用业务逻辑
@@ -47,7 +48,7 @@ def dataCollect():
             return jsonify(ResultEntityMethod.buildFailedResult(ErrorCode.NOT_REQUEST.get_code(), ErrorCode.NOT_REQUEST.get_msg(),None)), 400
         data = request.get_json()
         if not data:
-            return jsonify(ResultEntityMethod.buildFailedResult(ErrorCode.NOT_PARAM.get_code(), ErrorCode.NOT_PARAM.get_msg(), None)), 400
+            return jsonify(ResultEntityMethod.buildFailedResult(ErrorCode.NO_PARAM.get_code(), ErrorCode.NO_PARAM.get_msg(), None)), 400
         dataCollectReq = DataCollectReq.model_validate(data)
 
         # 调用业务逻辑
@@ -72,10 +73,10 @@ def dataCollect():
 def dataCollectByPage():
     try:
         if not request.args:
-            return jsonify(ResultEntityMethod.buildFailedResult(ErrorCode.NOT_PARAM.get_code(), ErrorCode.NOT_PARAM.get_msg(),None)), 400
+            return jsonify(ResultEntityMethod.buildFailedResult(ErrorCode.NO_REQUEST.get_code(), ErrorCode.NO_REQUEST.get_msg(),None)), 400
         data = request.get_json()
         if not data:
-            return jsonify(ResultEntityMethod.buildFailedResult(ErrorCode.NOT_PARAM.get_code(), ErrorCode.NOT_PARAM.get_msg(), None)), 400
+            return jsonify(ResultEntityMethod.buildFailedResult(ErrorCode.NO_PARAM.get_code(), ErrorCode.NO_PARAM.get_msg(), None)), 400
         dataCollectReq = DataCollectReq.model_validate(data)
 
         # 调用业务逻辑
@@ -100,10 +101,10 @@ def dataCollectByPage():
 def dataExport():
     try:
         if not request.args:
-            return jsonify(ResultEntityMethod.buildFailedResult(ErrorCode.NOT_PARAM.get_code(), ErrorCode.NOT_PARAM.get_msg(),None)), 400
+            return jsonify(ResultEntityMethod.buildFailedResult(ErrorCode.NO_REQUEST.get_code(), ErrorCode.NO_REQUEST.get_msg(),None)), 400
         data = request.get_json()
         if not data:
-            return jsonify(ResultEntityMethod.buildFailedResult(ErrorCode.NOT_PARAM.get_code(), ErrorCode.NOT_PARAM.get_msg(), None)), 400
+            return jsonify(ResultEntityMethod.buildFailedResult(ErrorCode.NO_PARAM.get_code(), ErrorCode.NO_PARAM.get_msg(), None)), 400
         dataExportReq = DataExportReq.model_validate(data)
 
         # 调用业务逻辑
@@ -128,10 +129,10 @@ def dataExport():
 def limsQuery():
     try:
         if not request.args:
-            return jsonify(ResultEntityMethod.buildFailedResult(ErrorCode.NOT_PARAM.get_code(), ErrorCode.NOT_PARAM.get_msg(),None)), 400
+            return jsonify(ResultEntityMethod.buildFailedResult(ErrorCode.NO_REQUEST.get_code(), ErrorCode.NO_REQUEST.get_msg(),None)), 400
         data = request.get_json()
         if not data:
-            return jsonify(ResultEntityMethod.buildFailedResult(ErrorCode.NOT_PARAM.get_code(), ErrorCode.NOT_PARAM.get_msg(), None)), 400
+            return jsonify(ResultEntityMethod.buildFailedResult(ErrorCode.NO_PARAM.get_code(), ErrorCode.NO_PARAM.get_msg(), None)), 400
         limsQueryReq = LimsQueryReq.model_validate(data)
 
         # 调用业务逻辑
