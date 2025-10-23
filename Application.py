@@ -30,6 +30,7 @@ cors = CORS(app, resources={r"/*": {"origins": "*", "supports_credentials": True
 app.register_blueprint(dataViewBp)
 app.register_blueprint(opcBp)
 
+manager_stop_event = threading.Event()
 def run_manager():
     """在单独线程中运行Manager"""
     manager = Manager()
@@ -37,12 +38,12 @@ def run_manager():
         manager.start()
         logging.info("Manager服务启动成功")
         # 保持Manager运行
-        while True:
-            threading.Event().wait(1)
+        manager_stop_event.wait()
     except Exception as e:
         logging.error(f"Manager运行异常: {e}")
     finally:
-        manager.shutdown()
+        if manager.running:
+            manager.shutdown()
         logging.info("Manager服务已关闭")
 
 if __name__ == '__main__':
@@ -60,14 +61,21 @@ if __name__ == '__main__':
     try:
         # 启动Flask应用（主线程）
         logging.info("启动Flask应用...")
-        app.run(debug=False, port=8181, use_reloader=False)
+        app.run(debug=False, port=8181)
     except KeyboardInterrupt:
         logging.info("接收到中断信号")
+        manager_stop_event.set()
     except Exception as e:
         logging.error(f"Flask应用异常: {e}")
     finally:
-        logging.info("应用关闭")
+        # 设置停止事件
+        manager_stop_event.set()
 
-        #这里结束的很不优雅TODO需要解决
-        import os
-        os._exit(0)
+        # 等待Manager线程结束
+        manager_thread.join(timeout=0.5)
+        if manager_thread.is_alive():
+            logging.warning("Manager线程未在超时时间内结束")
+        else:
+            logging.info("Manager线程已正常结束")
+
+        logging.info("应用关闭完成")

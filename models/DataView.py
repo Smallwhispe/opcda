@@ -8,7 +8,7 @@ from dataclasses import dataclass
 db = SQLAlchemy()
 
 @dataclass
-class DataView(db.Model, BaseModel):
+class DataView(db.Model):
     __tablename__ = 'data_view'
     id = db.Column(VARCHAR(45),primary_key=True)
     temperature = db.Column(VARCHAR(45))

@@ -1,10 +1,8 @@
 import logging
-import signal
 import time
 from concurrent.futures import ThreadPoolExecutor
 from typing import Dict, Optional, Any
 from cachetools import TTLCache
-from jinja2.nodes import Import
 
 from models.DataView import DataView
 from services.DataViewService import DataViewService
@@ -180,3 +178,7 @@ class Manager:
         self.task_executor.shutdown(wait=False, cancel_futures=True)
 
         self.logger.info("Manager服务已关闭")
+
+    @property
+    def running(self):
+        return self._running
