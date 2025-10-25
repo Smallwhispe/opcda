@@ -1,18 +1,19 @@
 import logging
-
+import os
+import qrcode
 from pydantic import ValidationError
 
 from models.DataView import db, DataView
 from vo import ResultEntity
 from vo.ResultEntity import ResultEntityMethod, ErrorCode
-from vo.req import DataCollectReq, ModelPredictReq, LimsQueryReq, DataExportReq
+from vo.req import DataCollectReq, ModelPredictReq, DataExportReq, QrQueryReq, QrExportReq
+from vo.res import QrQueryRes, QrExportRes
 
 logger = logging.getLogger()
 class DataViewService:
     @staticmethod
     def dataCollect(request: DataCollectReq) -> ResultEntity:
         try:
-            # 定义一个函数，用于处理对`/linklist`路由的GET请求。
             links = DataView.query.all()
             # .filter
             print(links)
@@ -51,10 +52,11 @@ class DataViewService:
                     error_out=False
                 )
                 links = pagination.items
+                #total为符合查询总数量
                 total = pagination.total
 
             except Exception as db_error:
-                logger.error(f"数据库查询失败: {str(db_error)}", exc_info=True)
+                logger.error(f"[opc分页] - 数据库查询失败: {str(db_error)}", exc_info=True)
                 return ResultEntityMethod.buildFailedResult(message="数据库服务暂时不可用")
 
             # 3. 数据验证和处理
@@ -64,7 +66,7 @@ class DataViewService:
 
             try:
                 # 构建响应数据
-                dataExportRes = {'dataList': links,'total': total}
+                dataExportRes = {'dataList': links,'total': len(links)}
 
                 # 记录成功日志
                 logger.info(f"[opc分页] - 数据分页查询请求处理成功，返回 {len(links)} 条数据")
@@ -83,7 +85,6 @@ class DataViewService:
     @staticmethod
     def dataExport(request: DataExportReq) -> ResultEntity:
         try:
-            # 定义一个函数，用于处理对`/linklist`路由的GET请求。
             links = DataView.query.all()
             #.filter
             print(links)
@@ -94,12 +95,69 @@ class DataViewService:
             logger.error("[opc数据导出] - opc数据导出未知异常", e)
 
     @staticmethod
-    def modelPredict(request: ModelPredictReq) -> ResultEntity:
-        pass
+    def modelPredict(request: ModelPredictReq, modelPredictService=None) -> ResultEntity:
+        try:
+            ##TODO这里应该是调用师姐的模型预测模块函数
+            result = modelPredictService.modelPredict(request)
+            # 将查询结果转换为字典列表
+            modelPredictRes = {'version': result.version, 'startTime': result.startTime, 'endTime': result.endTime, 'produce': result.produce}
+            return ResultEntityMethod.buildSuccessResult(data=modelPredictRes)
+        except Exception as e:
+            logger.error("[opc数据导出] - opc数据导出未知异常", e)
 
     @staticmethod
-    def limsQuery(request: LimsQueryReq) -> ResultEntity:
-        pass
+    def qrQuery(request: QrQueryReq) -> ResultEntity:
+        try:
+            qrQueryRes = QrQueryRes(
+                message=request['message'],
+                type=request['type']
+            )
+            return ResultEntityMethod.buildSuccessResult(data=qrQueryRes)
+        except Exception as e:
+            logger.error("[opc qr扫描] - opc qr扫描未知失败", e)
+            return ResultEntityMethod.buildFailedResult(message="opc qr扫描未知失败")
+
+    @staticmethod
+    def qrExport(request: QrExportReq) -> ResultEntity:
+        try:
+
+            #带自定义选项但无文本的二维码生成
+            try:
+                qr = qrcode.QRCode(
+                    version=1,
+                    error_correction=qrcode.constants.ERROR_CORRECT_M,
+                    box_size=request.get("size"),
+                    border=request.get("border"),
+                )
+                data = request.get("data")
+                qr.add_data(data)
+                qr.make(fit=True)
+
+                # 创建 export 目录（如果不存在）
+                export_dir = "export"
+                if not os.path.exists(export_dir):
+                    os.makedirs(export_dir)
+                    logger.info(f"[qr 导出] - 创建目录: {export_dir}")
+
+                # 设置文件路径到 export 目录
+                filename = request.get("filename")
+                filepath = os.path.join(export_dir, filename)
+
+                # img可导出返回
+                img = qr.make_image(fill_color=request.get("fill_color"), back_color=request.get("back_color"))
+                img.save(filepath)
+                logger.info(f"[qr 导出] - 二维码已成功生成并保存为: {filepath}")
+                logger.info(f"[qr 导出] - 编码的数据: {data}")
+                qrExportRes = QrExportRes(
+                    exportSuccess = True
+                )
+                return ResultEntityMethod.buildSuccessResult(data=qrExportRes)
+            except Exception as e:
+                logger.error("[qr 导出] - 生成二维码时出错:", e)
+                ResultEntityMethod.buildFailedResult(message="opc qr导出生成二维码出错")
+        except Exception as e:
+            logger.error("[qr 导出] - opc qr导出未知失败", e)
+            return ResultEntityMethod.buildFailedResult(message="opc qr导出未知失败")
 
     @staticmethod
     def save(request) -> bool:

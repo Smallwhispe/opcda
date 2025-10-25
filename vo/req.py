@@ -1,10 +1,8 @@
-from dataclasses import dataclass
-from typing import Optional
+from typing import Optional, Any
 
 from pydantic import BaseModel
 
 
-@dataclass
 class DataCollectReq(BaseModel):
     """数据展示请求"""
     #页数
@@ -16,7 +14,6 @@ class DataCollectReq(BaseModel):
     #截止时间
     endTime: Optional[int] = None
 
-@dataclass
 class DataExportReq(BaseModel):
     """数据导出请求"""
     #起始时间
@@ -24,11 +21,22 @@ class DataExportReq(BaseModel):
     #截止时间
     endTime: Optional[int] = None
 
-@dataclass
-class LimsQueryReq(BaseModel):
-    """LIMS查询请求"""
-    #TODO 二维码查询
+class QrQueryReq(BaseModel):
+    message: Optional[str] = None
+    type: Optional[str] = None
 
+class QrExportReq(BaseModel):
+    #二维码封存的数据
+    data: Optional[Any] = None
+    filename: Optional[str] = None
+    size: Optional[int] = None
+    border: Optional[int] = None
+    fill_color: Optional[str] = None
+    back_color: Optional[str] = None
+    # 添加这行配置, 允许嵌套的不是默认类型的存在
+    model_config = {
+        "arbitrary_types_allowed": True
+    }
 
 class Produce:
     #分馏塔顶温度
@@ -39,7 +47,6 @@ class Produce:
     liquid: Optional[str] = None
 
 
-@dataclass
 class ModelPredictReq(BaseModel):
     """模型预测请求"""
     #模型版本号
@@ -50,7 +57,7 @@ class ModelPredictReq(BaseModel):
     endTime: Optional[int] = None
     #工艺参数
     produce: Optional[Produce] = None
-    # 添加这行配置
+    # 添加这行配置, 允许嵌套的produce不是默认类型的存在
     model_config = {
         "arbitrary_types_allowed": True
     }

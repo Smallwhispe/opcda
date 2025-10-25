@@ -1,20 +1,15 @@
-from dataclasses import dataclass
 from typing import Optional, List
-
 from pydantic import BaseModel
-
 from models.DataView import DataView
 
-
-@dataclass
 class DataCollectRes(BaseModel):
     """数据展示响应"""
     #数据条目数量
+    #分页即为当前页数量
     total: Optional[int] = None
     #工艺数据展示
     dataList: Optional[List[DataView]] = None
 
-@dataclass
 class DataExportRes(BaseModel):
     """数据导出响应"""
     #数据条目数量
@@ -22,10 +17,12 @@ class DataExportRes(BaseModel):
     #工艺数据展示
     dataList: Optional[List[DataView]] = None
 
-@dataclass
-class LimsQueryRes(BaseModel):
-    """LIMS查询响应"""
-    #TODO 二维码查询
+class QrQueryRes(BaseModel):
+    message: Optional[str] = None
+    type: Optional[str] = None
+
+class QrExportRes(BaseModel):
+    exportSuccess: bool = False
 
 class Product:
     #粗汽油干点
@@ -35,8 +32,6 @@ class Product:
     #稳定汽油蒸汽压
     pressure: Optional[str] = None
 
-
-@dataclass
 class ModelPredictRes(BaseModel):
     """模型预测响应"""
     #模型版本号
@@ -47,7 +42,7 @@ class ModelPredictRes(BaseModel):
     endTime: Optional[int] = None
     #工艺参数
     produce: Optional[Product] = None
-    # 添加这行配置
+    # 添加这行配置, 允许嵌套的produce不是默认类型的存在
     model_config = {
         "arbitrary_types_allowed": True
     }

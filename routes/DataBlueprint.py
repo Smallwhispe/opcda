@@ -4,8 +4,8 @@ from pydantic import ValidationError
 
 from services.DataViewService import DataViewService
 from vo.ResultEntity import ResultEntityMethod, ErrorCode
-from vo.req import ModelPredictReq, DataCollectReq, DataExportReq, LimsQueryReq
-from vo.res import ModelPredictRes, DataCollectRes, DataExportRes, LimsQueryRes
+from vo.req import ModelPredictReq, DataCollectReq, DataExportReq, QrQueryReq, QrExportReq
+from vo.res import ModelPredictRes, DataCollectRes, DataExportRes, QrQueryRes, QrExportRes
 
 dataViewBp = Blueprint('dataViewBp', __name__, url_prefix='/data')
 
@@ -24,7 +24,7 @@ def modelPredict():
         # 调用业务逻辑
         result_data = DataViewService.modelPredict(modelPredictReq)
 
-        if not result_data.success:
+        if result_data.success:
             # 构建响应
             response = ModelPredictRes(
                 version=result_data['version'],
@@ -54,7 +54,7 @@ def dataCollect():
         # 调用业务逻辑
         result_data = DataViewService.dataCollect(dataCollectReq)
 
-        if not result_data.success:
+        if result_data.success:
             # 构建响应
             response = DataCollectRes(
                 total=result_data['total'],
@@ -82,7 +82,7 @@ def dataCollectByPage():
         # 调用业务逻辑
         result_data = DataViewService.dataCollectByPage(dataCollectReq)
 
-        if not result_data.success:
+        if result_data.success:
             # 构建响应
             response = DataCollectRes(
                 total=result_data['total'],
@@ -110,7 +110,7 @@ def dataExport():
         # 调用业务逻辑
         result_data = DataViewService.dataExport(dataExportReq)
 
-        if not result_data.success:
+        if result_data.success:
             # 构建响应
             response = DataExportRes(
                 total=result_data['total'],
@@ -125,23 +125,24 @@ def dataExport():
         logger.error("[opc数据导出] - opc数据导出未知失败", e)
         return jsonify(ResultEntityMethod.buildFailedResult(ErrorCode.FAILURE.get_code(), ErrorCode.FAILURE.get_msg(), None)), 500
 
-@dataViewBp.route('/lims', methods=['GET'])
-def limsQuery():
+@dataViewBp.route('/qrQuery', methods=['GET'])
+def QrQuery():
     try:
         if not request.args:
             return jsonify(ResultEntityMethod.buildFailedResult(ErrorCode.NO_REQUEST.get_code(), ErrorCode.NO_REQUEST.get_msg(),None)), 400
         data = request.get_json()
         if not data:
             return jsonify(ResultEntityMethod.buildFailedResult(ErrorCode.NO_PARAM.get_code(), ErrorCode.NO_PARAM.get_msg(), None)), 400
-        limsQueryReq = LimsQueryReq.model_validate(data)
+        qrQueryReq = QrQueryReq.model_validate(data)
 
         # 调用业务逻辑
-        result_data = DataViewService.limsQuery(limsQueryReq)
+        result_data = DataViewService.qrQuery(qrQueryReq)
 
-        if not result_data.success:
+        if result_data.success:
             # 构建响应
-            response = LimsQueryRes(
-                #TODO 二维码查询
+            response = QrQueryRes(
+                message = result_data['message'],
+                type = result_data['type']
             )
             return jsonify(ResultEntityMethod.buildSuccessResult(ErrorCode.SUCCESS.get_code(), ErrorCode.SUCCESS.get_msg(),response)), 200
         else:
@@ -149,5 +150,32 @@ def limsQuery():
     except ValidationError as e:
         return jsonify(ResultEntityMethod.buildFailedResult(ErrorCode.VALID_FAILURE.get_code(), ErrorCode.VALID_FAILURE.get_msg(), None)), 400
     except Exception as e:
-        logger.error("[opc lims查询] - opc lims查询未知失败", e)
+        logger.error("[opc qr查询] - opc lims查询未知失败", e)
+        return jsonify(ResultEntityMethod.buildFailedResult(ErrorCode.FAILURE.get_code(), ErrorCode.FAILURE.get_msg(), None)), 500
+
+@dataViewBp.route('/qrExport', methods=['GET'])
+def QrExport():
+    try:
+        if not request.args:
+            return jsonify(ResultEntityMethod.buildFailedResult(ErrorCode.NO_REQUEST.get_code(), ErrorCode.NO_REQUEST.get_msg(),None)), 400
+        data = request.get_json()
+        if not data:
+            return jsonify(ResultEntityMethod.buildFailedResult(ErrorCode.NO_PARAM.get_code(), ErrorCode.NO_PARAM.get_msg(), None)), 400
+        qrExportReq = QrExportReq.model_validate(data)
+
+        # 调用业务逻辑
+        result_data = DataViewService.qrExport(qrExportReq)
+
+        if result_data.success and result_data['data']:
+            # 构建响应
+            response = QrExportRes(
+                exportSuccess = result_data['exportSuccess'],
+            )
+            return jsonify(ResultEntityMethod.buildSuccessResult(ErrorCode.SUCCESS.get_code(), ErrorCode.SUCCESS.get_msg(),response)), 200
+        else:
+            return jsonify(ResultEntityMethod.buildFailedResult(ErrorCode.SERVICE_FAILURE.get_code(), ErrorCode.SERVICE_FAILURE.get_msg(),None)), 500
+    except ValidationError as e:
+        return jsonify(ResultEntityMethod.buildFailedResult(ErrorCode.VALID_FAILURE.get_code(), ErrorCode.VALID_FAILURE.get_msg(), None)), 400
+    except Exception as e:
+        logger.error("[opc qr查询] - opc lims查询未知失败", e)
         return jsonify(ResultEntityMethod.buildFailedResult(ErrorCode.FAILURE.get_code(), ErrorCode.FAILURE.get_msg(), None)), 500
