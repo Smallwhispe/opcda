@@ -2,6 +2,7 @@ import logging
 from flask import Blueprint, request, jsonify
 from pydantic import ValidationError
 
+from services.DataCollectService import DataCollectService
 from services.DataViewService import DataViewService
 from vo.QrExport import QrExportReq, QrExportRes
 from vo.ResultEntity import ResultEntityMethod, ErrorCode
@@ -53,13 +54,13 @@ def dataCollect():
         dataCollectReq = DataCollectReq.model_validate(data)
 
         # 调用业务逻辑
-        result_data = DataViewService.dataCollect(dataCollectReq)
+        result_data = DataCollectService.data_collect(dataCollectReq)
 
         if result_data.success:
             # 构建响应
             response = DataCollectRes(
-                total=result_data['total'],
-                dataList=result_data['dataList'],
+                total=result_data.data.total,
+                dataList=result_data.data.dataList,
             )
             return jsonify(ResultEntityMethod.buildSuccessResult(ErrorCode.SUCCESS.get_code(), ErrorCode.SUCCESS.get_msg(),response)), 200
         else:
@@ -81,13 +82,13 @@ def dataCollectByPage():
         dataCollectReq = DataCollectReq.model_validate(data)
 
         # 调用业务逻辑
-        result_data = DataViewService.dataCollectByPage(dataCollectReq)
+        result_data = DataCollectService.data_collect_by_page(dataCollectReq)
 
         if result_data.success:
             # 构建响应
             response = DataCollectRes(
-                total=result_data['total'],
-                dataList=result_data['dataList'],
+                total=result_data.data.total,
+                dataList=result_data.data.dataList,
             )
             return jsonify(ResultEntityMethod.buildSuccessResult(ErrorCode.SUCCESS.get_code(), ErrorCode.SUCCESS.get_msg(),response)), 200
         else:

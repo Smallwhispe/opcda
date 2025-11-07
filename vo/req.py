@@ -1,5 +1,5 @@
 from typing import Optional, Any
-
+from datetime import datetime
 from pydantic import BaseModel
 
 
@@ -9,17 +9,21 @@ class DataCollectReq(BaseModel):
     page: Optional[int] = None
     #每页数量
     size: Optional[int] = None
+    #数据类型
+    dataType: Optional[str] = None
+    #日期
+    date: Optional[datetime] = None
     #起始时间
-    startTime: Optional[int] = None
+    startTime: Optional[datetime] = None
     #截止时间
-    endTime: Optional[int] = None
+    endTime: Optional[datetime] = None
 
 class DataExportReq(BaseModel):
     """数据导出请求"""
     #起始时间
-    startTime: Optional[int] = None
-    #截止时间
-    endTime: Optional[int] = None
+    date: Optional[datetime] = None
+    #数据类型
+    dataType: Optional[str] = None
 
 class QrQueryReq(BaseModel):
     message: Optional[str] = None

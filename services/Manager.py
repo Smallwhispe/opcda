@@ -7,6 +7,8 @@ from cachetools import TTLCache
 from models.DataView import DataView
 from services.DataViewService import DataViewService
 from config.Config import Config
+from vo.ResultEntity import ErrorCode
+
 
 class Manager:
     def __init__(self):
@@ -68,6 +70,7 @@ class Manager:
         self.logger.info("[opc缓存刷新] - opc数据缓存刷新中")
         try:
             data_view = self.catch_data_from_opc_client()
+            data_view.dataType = ErrorCode.COLLECT.get_msg()
             self.logger.info(f"[opc缓存刷新] - 获取数据dataView为: {data_view}")
             if data_view and data_view.time:
                 self.save_to_cache(data_view.time, data_view)

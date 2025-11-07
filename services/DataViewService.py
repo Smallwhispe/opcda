@@ -1,99 +1,201 @@
 import logging
 import os
+from typing import Optional
+
 import qrcode
+import xlwt
+import json
 from pydantic import ValidationError
 
-from models.DataView import db, DataView
+from models.DataView import DataView
 from vo import ResultEntity
 from vo.QrExport import QrExportRes, QrExportReq
 from vo.ResultEntity import ResultEntityMethod, ErrorCode
-from vo.req import DataCollectReq, ModelPredictReq, DataExportReq, QrQueryReq
+from vo.req import ModelPredictReq, DataExportReq, QrQueryReq
 from vo.res import QrQueryRes
 
+from datetime import datetime, date
+
+import pytz
 logger = logging.getLogger()
+LOCAL_TZ = pytz.timezone("Asia/Shanghai")
+
+DATA_DIR = "repository"
+EXT = ".ndjson"
+EXPORT_DIR = "export"
+
+def ensure_export_dir():
+    if not os.path.exists(EXPORT_DIR):
+        os.makedirs(EXPORT_DIR)
+
+def date_to_fname(d: date, data_type: str) -> str:
+    """data/<dataType>_YYYY-MM-DD.ndjson"""
+    ensure_export_dir()
+    fname = "{}_{}{}".format(data_type, d.isoformat(), EXT)
+    return os.path.join(DATA_DIR, fname)
+
+def today_file_path(data_type: str) -> str:
+    """按本地时区(Asia/Shanghai)的日期命名文件"""
+    if not os.path.exists(DATA_DIR):
+        os.makedirs(DATA_DIR)
+    day = datetime.now(LOCAL_TZ).date().isoformat()  # e.g. '2025-11-07'
+    return os.path.join(DATA_DIR, data_type +'_'+ day + EXT)
+
+def append_line(d: dict, data_type: str):
+    """将一条字典记录以一行 JSON 追加写入当天文件"""
+    path = today_file_path(data_type)
+    with open(path, "a", encoding="utf-8") as f:
+        f.write(json.dumps(d, ensure_ascii=False))
+        f.write("\n")
+
+def parse_dt_maybe(value) -> Optional[datetime]:
+    """将 str/datetime/时间戳 转为带 Asia/Shanghai 时区的 datetime；失败返回 None。"""
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        #是否有时区
+        return value if value.tzinfo else LOCAL_TZ.localize(value)
+    if isinstance(value, (int, float)):
+        # 视为“秒”时间戳；如果传的是毫秒，请先在业务层 / 这里判断并除以 1000
+        return datetime.fromtimestamp(float(value), tz=LOCAL_TZ)
+    if isinstance(value, str):
+        s = value.strip()
+        for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M", "%Y-%m-%d",
+                    "%Y/%m/%d %H:%M:%S", "%Y/%m/%d %H:%M", "%Y/%m/%d"):
+            try:
+                dt = datetime.strptime(s, fmt)
+                return LOCAL_TZ.localize(dt)
+            except Exception:
+                continue
+        # 简单 ISO 兜底
+        try:
+            s2 = s.replace("T", " ").replace("Z", "")
+            for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M"):
+                try:
+                    dt = datetime.strptime(s2, fmt)
+                    return LOCAL_TZ.localize(dt)
+                except Exception:
+                    pass
+        except Exception:
+            pass
+    return None
+
+
+
 class DataViewService:
     @staticmethod
-    def dataCollect(request: DataCollectReq) -> ResultEntity:
+    def dataExport(request: 'DataExportReq') -> ResultEntity:
+        """
+        将当天 ndjson 全量写为 .xls 保存到 export 目录，并返回前100条作为 dataList。
+        入参:
+          - request.date: datetime(可空, 空则今天/Asia/Shanghai)
+          - request.dataType: str(可空, 空则 'default')
+        返回:
+          - dataList: 前100条
+          - total: len(dataList)（当前页数量）
+          - filePath: 导出的 xls 文件绝对路径
+          - fileName: 导出的 xls 文件名
+        """
         try:
-            links = DataView.query.all()
-            # .filter
-            print(links)
-            # 将查询结果转换为字典列表
-            dataCollectRes = {'dataList': links, 'total': len(links)}
-            return ResultEntityMethod.buildSuccessResult(data=dataCollectRes)
-        except Exception as e:
-            logger.error("[opc数据导出] - opc数据导出未知异常", e)
+            # 1) dataType
+            data_type = getattr(request, "dataType", None)
+            if data_type is None and isinstance(request, dict):
+                data_type = request.get("dataType")
+            if not data_type:
+                data_type = "default"
 
-    @staticmethod
-    def dataCollectByPage(request: DataCollectReq) -> ResultEntity:
-        try:
-            # 如果有分页参数，进行验证
-            page = getattr(request, 'page', 1)
-            page_size = getattr(request, 'size', 100)
+            # 2) date（默认今天）
+            date_raw = getattr(request, "date", None)
+            if date_raw is None and isinstance(request, dict):
+                date_raw = request.get("date")
 
-            if page < 1:
-                page = 1
-            if page_size < 1 or page_size > 1000:  # 限制最大页大小
-                page_size = 100
+            dt = parse_dt_maybe(date_raw)
+            if dt is None:
+                dt = datetime.now(LOCAL_TZ)
+            else:
+                dt = dt.astimezone(LOCAL_TZ) if dt.tzinfo else LOCAL_TZ.localize(dt)
 
-            logger.info(f"[opc分页] - 处理数据展示请求 - 页码: {page}, 页大小: {page_size}")
+            day = dt.date()
 
-            try:
-                query = DataView.query
-
-                # 可以添加过滤条件（根据request中的参数）
-                # if hasattr(request, 'start_time') and request.start_time:
-                #     query = query.filter(DataView.time >= request.start_time)
-                # if hasattr(request, 'end_time') and request.end_time:
-                #     query = query.filter(DataView.time <= request.end_time)
-                #使用分页（推荐用于大量数据）
-                pagination = query.paginate(
-                    page=page,
-                    per_page=page_size,
-                    error_out=False
+            # 3) 源文件路径
+            src_path = date_to_fname(day, data_type)   # 注意这里是 _date_to_fname
+            if not os.path.exists(src_path):
+                logger.info("[opc数据导出] - 当天文件不存在: %s", src_path)
+                # 按你们之前习惯：用 SuccessResult 返回 NO_DATA 编码与信息
+                return ResultEntityMethod.buildSuccessResult(
+                    ErrorCode.NO_DATA.get_code(),
+                    ErrorCode.NO_DATA.get_msg(),
+                    None
                 )
-                links = pagination.items
-                #total为符合查询总数量
-                total = pagination.total
 
-            except Exception as db_error:
-                logger.error(f"[opc分页] - 数据库查询失败: {str(db_error)}", exc_info=True)
-                return ResultEntityMethod.buildFailedResult(message="数据库服务暂时不可用")
+            # 4) 读取 ndjson & 准备导出
+            first_100 = []
+            total_rows = 0
+            columns = ["id", "temperature", "flow", "pressure", "concentration", "time"]
 
-            # 3. 数据验证和处理
-            if not links:
-                logger.info("[opc分页] - 未查询到符合条件的数据")
-                return ResultEntityMethod.buildSuccessResult(ErrorCode.NO_DATA.get_code(),ErrorCode.NO_DATA.get_msg(),None)
+            # 5) 写 xls（全量）
+            ensure_export_dir()
+            base_filename = "{}_{}.xls".format(data_type, day.isoformat())
+            out_path = os.path.join(EXPORT_DIR, base_filename)
+            if os.path.exists(out_path):
+                counter = 1
+                name_only, ext = os.path.splitext(base_filename)
+                while os.path.exists(out_path):
+                    new_name = "{}_{}{}".format(name_only, counter, ext)
+                    out_path = os.path.join(EXPORT_DIR, new_name)
+                    counter += 1
+            out_filename = os.path.basename(out_path)
 
-            try:
-                # 构建响应数据
-                dataExportRes = {'dataList': links,'total': len(links)}
+            wb = xlwt.Workbook()
+            ws = wb.add_sheet("data")
 
-                # 记录成功日志
-                logger.info(f"[opc分页] - 数据分页查询请求处理成功，返回 {len(links)} 条数据")
+            # 表头
+            for col_idx, col_name in enumerate(columns):
+                ws.write(0, col_idx, col_name)
 
-                return ResultEntityMethod.buildSuccessResult(data=dataExportRes)
+            # 行写入
+            row_idx = 1
+            with open(src_path, "r", encoding="utf-8") as f:
+                for line in f:
+                    s = line.strip()
+                    if not s:
+                        continue
+                    try:
+                        obj = json.loads(s)
+                    except Exception:
+                        continue
 
-            except Exception as processing_error:
-                logger.error(f"[opc分页] - 数据处理过程中发生错误: {str(processing_error)}", exc_info=True)
-                return ResultEntityMethod.buildFailedResult(message="数据处理失败，请稍后重试")
+                    if len(first_100) < 100:
+                        first_100.append(obj)
+
+                    # 写入一行（全量写入 xls）
+                    for col_idx, col_name in enumerate(columns):
+                        val = obj.get(col_name, "")
+                        if val is None:
+                            val = ""
+                        ws.write(row_idx, col_idx, val)
+                    row_idx += 1
+                    total_rows += 1
+
+            wb.save(out_path)
+            logger.info("[opc数据导出] - 已导出为 xls: %s (共 %d 行)", out_path, total_rows)
+
+            # 6) 返回“部分数据”（前100条）+ 导出文件信息
+            resp = {
+                "dataList": first_100,
+                "total": len(first_100),     # 当前页数量（前100条）
+                "fileName": out_filename,
+                "filePath": os.path.abspath(out_path),
+            }
+            return ResultEntityMethod.buildSuccessResult(data=resp)
 
         except Exception as e:
-            # 全局异常捕获
-            logger.critical(f"[opc分页] - 数据导出处理发生严重错误: {str(e)}", exc_info=True)
-            return ResultEntityMethod.buildFailedResult(message="系统内部错误，请联系管理员")
+            logger.error("[opc数据导出] - 本地数据导出未知异常: %s", e, exc_info=True)
+            return ResultEntityMethod.buildFailedResult(message="本地数据导出失败")
 
-    @staticmethod
-    def dataExport(request: DataExportReq) -> ResultEntity:
-        try:
-            links = DataView.query.all()
-            #.filter
-            print(links)
-            # 将查询结果转换为字典列表
-            dataExportRes = {'dataList': links, 'total': len(links)}
-            return ResultEntityMethod.buildSuccessResult(data=dataExportRes)
         except Exception as e:
-            logger.error("[opc数据导出] - opc数据导出未知异常", e)
+            logger.error("[opc数据导出] - 本地数据导出未知异常: %s", e, exc_info=True)
+            return ResultEntityMethod.buildFailedResult(message="本地数据导出失败")
 
     @staticmethod
     def modelPredict(request: ModelPredictReq, modelPredictService=None) -> ResultEntity:
@@ -180,21 +282,35 @@ class DataViewService:
     @staticmethod
     def save(request) -> bool:
         try:
-            if not request.args:
-                logger.error("[opc数据存储] - opc数据存储未检测到请求")
-                return False
-            data = request.get_json()
+            # 对于 Flask：args 为空并不代表无效请求，这里仅做温和检查
+            data = request.get_json(silent=True) or {}
             if not data:
-                logger.error("[opc数据存储] - opc数据存储data为空")
+                logger.error("[opc数据存储] - 请求体为空或非 JSON")
                 return False
-            dataView = DataView.model_validate(data)
 
-            db.session.add(dataView)
-            db.session.commit()
+            # 只接收业务字段，id/time 由模型 default_factory 自动生成
+            allowed = {"dataType", "temperature", "flow", "pressure", "concentration", "quality"}
+            payload = {k: v for k, v in data.items() if k in allowed}
+
+            # Pydantic v1：用 parse_obj（或 DataView(**payload) 也可以）
+            data_view = DataView(**payload)
+
+            # 序列化为一行，时间为 'YYYY-MM-DD HH:MM:SS'
+            record = data_view.to_dict()
+
+            # 读取 dataType
+            data_type = data_view.dataType
+            if not data_type:
+                data_type = "default"  # 可按需改默认
+            # 追加写入当日文件
+            append_line(record, data_type)
+
+            logger.info("[opc数据存储] - 本地写入成功: %s", record.get("id"))
             return True
+
         except ValidationError as e:
-            logger.error("[opc数据存储] - opc数据存储参数不正常", e)
+            logger.error("[opc数据存储] - 参数校验失败: %s", e, exc_info=True)
             return False
         except Exception as e:
-            logger.error("[opc数据存储] - opc数据存储未知失败", e)
+            logger.error("[opc数据存储] - 未知失败: %s", e, exc_info=True)
             return False

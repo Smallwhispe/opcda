@@ -1,32 +1,44 @@
-from pydantic import BaseModel
-from sqlalchemy import String, VARCHAR
+from datetime import datetime
+from typing import Optional
+from uuid import uuid4
 
-from flask_sqlalchemy import SQLAlchemy
-from sqlalchemy.dialects.mysql import MEDIUMTEXT
-from dataclasses import dataclass
+import pytz
+from pydantic import BaseModel, Field
 
-db = SQLAlchemy()
+LOCAL_TZ = pytz.timezone("Asia/Shanghai")
 
-@dataclass
-class DataView(db.Model):
-    __tablename__ = 'data_view'
-    id = db.Column(VARCHAR(45),primary_key=True)
-    temperature = db.Column(VARCHAR(45))
-    liquid = db.Column(VARCHAR(45))
-    pressure = db.Column(VARCHAR(45))
-    time = db.Column(MEDIUMTEXT)
+def now_jst() -> datetime:
+    # 生成带时区的当前时间（pytz 的推荐写法）
+    return LOCAL_TZ.localize(datetime.now())
+
+class DataView(BaseModel):
+    id: str = Field(default_factory=lambda: uuid4().hex)
+    dataType:  Optional[str] = None
+    temperature: Optional[str] = None
+    flow: Optional[str] = None
+    pressure: Optional[str] = None
+    concentration: Optional[str] = None
+    quality: Optional[bool] = False
+    time: datetime = Field(default_factory=now_jst)
 
     def __repr__(self):
         return (f"DataView(id='{self.id}', "
+                f"dataType='{self.dataType}', "
                 f"temperature='{self.temperature}', "
-                f"liquid='{self.liquid}', "
+                f"flow='{self.flow}', "
                 f"pressure={self.pressure}, "
+                f"concentration={self.concentration}, "
+                f"quality={self.quality}, "
                 f"time={self.time}, )")
+
     def to_dict(self):
         return {
             'id': self.id,
+            'dataType': self.dataType,
             'temperature': self.temperature,
-            'liquid': self.liquid,
+            'flow': self.flow,
             'pressure': self.pressure,
-            'time': self.time
+            'concentration': self.concentration,
+            'quality': self.quality,
+            'time': self.time.strftime("%Y-%m-%d %H:%M:%S")
         }

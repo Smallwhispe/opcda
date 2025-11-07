@@ -1,13 +1,11 @@
 from dataclasses import dataclass
-from typing import Generic, TypeVar, Optional, Any
+from typing import Optional, Any
 from enum import Enum, unique
 
-T = TypeVar('T')  # 泛型类型参数
-
 @dataclass
-class ResultEntity(Generic[T]):
+class ResultEntity:
 
-    def __init__(self, success: bool, code: str, message: str, data: Optional[T] = None):
+    def __init__(self, success: bool, code: str, message: str, data: Optional[Any] = None):
         self.success = success
         self.code = code
         self.message = message
@@ -16,16 +14,8 @@ class ResultEntity(Generic[T]):
     """统一响应结果实体"""
     code: str  # 状态码
     message: str  # 消息
-    data: Optional[T] = None  # 数据（泛型）
+    data: Optional[Any] = None  # 数据（泛型）
     success: bool = False  # 是否成功
-
-    ##初始化后可以进行的操作
-    # def __post_init__(self):
-    #     if self.timestamp is None:
-    #         import time
-    #         self.timestamp = int(time.time())
-    #     if self.code == 200:
-    #         self.success = True
 
 @unique  # 确保值唯一
 class ErrorCode(Enum):
@@ -42,6 +32,9 @@ class ErrorCode(Enum):
     NO_REQUEST = ("000008", "没有请求体")
     NO_DATA = ("000009", "未找到相关数据")
 
+    COLLECT = ("100001", "采样数据")
+    PREDICT = ("100002", "预测数据")
+
     def __init__(self, code: str, msg: str):
         self._code = code
         self._msg = msg
@@ -53,11 +46,11 @@ class ErrorCode(Enum):
         return self._msg
 
     @classmethod
-    def from_code(cls, code: str) -> Optional['ErrorCode']:
+    def from_code(cls, code: str) -> Optional[str]:
         """根据code获取枚举"""
         for error_code in cls:
             if error_code.get_code() == code:
-                return error_code
+                return error_code.get_msg()
         return None
 
 class ResultEntityMethod:
