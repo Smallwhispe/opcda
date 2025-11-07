@@ -4,31 +4,17 @@ import threading
 # 导入Flask框架，用于创建Web应用；导入jsonify函数，用于生成JSON响应。
 from flask import Flask
 from flask_cors import CORS
-from models.DataView import db
 from routes.DataBlueprint import dataViewBp
-from routes.OpcBlueprint import opcBp
 from services.Manager import Manager
 
 app = Flask(__name__)
 # 创建一个Flask应用实例。`__name__`是当前模块的名称，Flask使用它来找到应用的位置，从而知道在哪里可以找到资源文件（如模板和静态文件）。
-
-# 配置数据库URI
-app.config['SQLALCHEMY_DATABASE_URI'] = 'mysql+pymysql://root:sfzhm130928@localhost:3306/data'
-# 设置SQLAlchemy的配置选项，指定数据库URI。
-app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-# 禁用SQLAlchemy的事件系统，减少不必要的内存开销。这是一个推荐的做法，特别是在生产环境中。
-
-db.init_app(app)
-with app.app_context():
-    db.create_all()
-# 使用Flask应用上下文来确保能够正确地与数据库交互。`db.create_all()`方法会检查数据库中是否存在所有定义的模型表，如果不存在，则根据模型定义创建它们。
 
 cors = CORS(app, resources={r"/*": {"origins": "*", "supports_credentials": True,
                                                     "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS", "TRACE", "HEAD", "PATCH"],
                                     "allow_headers": ["Content-Type", "Authorization"]}})
 
 app.register_blueprint(dataViewBp)
-app.register_blueprint(opcBp)
 
 manager_stop_event = threading.Event()
 def run_manager():
