@@ -3,7 +3,7 @@ import os
 from typing import Optional
 
 import qrcode
-import xlwt
+import csv
 import json
 from pydantic import ValidationError
 
@@ -122,7 +122,7 @@ class DataViewService:
             if not os.path.exists(src_path):
                 logger.info("[opc数据导出] - 当天文件不存在: %s", src_path)
                 # 按你们之前习惯：用 SuccessResult 返回 NO_DATA 编码与信息
-                return ResultEntityMethod.buildSuccessResult(
+                return ResultEntityMethod.buildFailedResult(
                     ErrorCode.NO_DATA.get_code(),
                     ErrorCode.NO_DATA.get_msg(),
                     None
@@ -133,9 +133,9 @@ class DataViewService:
             total_rows = 0
             columns = ["id", "temperature", "flow", "pressure", "concentration", "time"]
 
-            # 5) 写 xls（全量）
+            # 5) 写 csv（全量）
             ensure_export_dir()
-            base_filename = "{}_{}.xls".format(data_type, day.isoformat())
+            base_filename = "{}_{}.csv".format(data_type, day.isoformat())
             out_path = os.path.join(EXPORT_DIR, base_filename)
             if os.path.exists(out_path):
                 counter = 1
@@ -146,39 +146,28 @@ class DataViewService:
                     counter += 1
             out_filename = os.path.basename(out_path)
 
-            wb = xlwt.Workbook()
-            ws = wb.add_sheet("data")
+            with open(out_path, "w", encoding="utf-8", newline="") as csvfile:
+                writer = csv.DictWriter(csvfile, fieldnames=columns)
+                writer.writeheader()
 
-            # 表头
-            for col_idx, col_name in enumerate(columns):
-                ws.write(0, col_idx, col_name)
+                with open(src_path, "r", encoding="utf-8") as f:
+                    for line in f:
+                        s = line.strip()
+                        if not s:
+                            continue
+                        try:
+                            obj = json.loads(s)
+                        except Exception:
+                            continue
 
-            # 行写入
-            row_idx = 1
-            with open(src_path, "r", encoding="utf-8") as f:
-                for line in f:
-                    s = line.strip()
-                    if not s:
-                        continue
-                    try:
-                        obj = json.loads(s)
-                    except Exception:
-                        continue
+                        if len(first_100) < 100:
+                            first_100.append(obj)
 
-                    if len(first_100) < 100:
-                        first_100.append(obj)
+                        row = {col: obj.get(col, "") for col in columns}
+                        writer.writerow(row)
+                        total_rows += 1
 
-                    # 写入一行（全量写入 xls）
-                    for col_idx, col_name in enumerate(columns):
-                        val = obj.get(col_name, "")
-                        if val is None:
-                            val = ""
-                        ws.write(row_idx, col_idx, val)
-                    row_idx += 1
-                    total_rows += 1
-
-            wb.save(out_path)
-            logger.info("[opc数据导出] - 已导出为 xls: %s (共 %d 行)", out_path, total_rows)
+            logger.info("[opc数据导出] - 已导出为 csv: %s (共 %d 行)", out_path, total_rows)
 
             # 6) 返回“部分数据”（前100条）+ 导出文件信息
             resp = {
@@ -188,10 +177,6 @@ class DataViewService:
                 "filePath": os.path.abspath(out_path),
             }
             return ResultEntityMethod.buildSuccessResult(data=resp)
-
-        except Exception as e:
-            logger.error("[opc数据导出] - 本地数据导出未知异常: %s", e, exc_info=True)
-            return ResultEntityMethod.buildFailedResult(message="本地数据导出失败")
 
         except Exception as e:
             logger.error("[opc数据导出] - 本地数据导出未知异常: %s", e, exc_info=True)

@@ -1,5 +1,5 @@
 from vo import ResultEntity
-from vo.req import DataCollectReq, ModelPredictReq, LimsQueryReq, DataExportReq
+from vo.req import DataCollectReq, ModelPredictReq, DataExportReq
 
 
 class OpcRequestService:

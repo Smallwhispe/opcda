@@ -57,7 +57,7 @@ class ResultEntityMethod:
     """结果构建工具类"""
 
     @staticmethod
-    def buildSuccessResult(code: str = "000000", message: str = "成功", data: Any = None) -> ResultEntity[T]:
+    def buildSuccessResult(code: str = "000000", message: str = "成功", data: Any = None) -> ResultEntity:
         """构建成功结果"""
         return ResultEntity(
             success=True,
@@ -67,7 +67,7 @@ class ResultEntityMethod:
         )
 
     @staticmethod
-    def buildFailedResult(code: str = "999999", message: str = "失败", data: Any = None) -> ResultEntity[Any]:
+    def buildFailedResult(code: str = "999999", message: str = "失败", data: Any = None) -> ResultEntity:
         """构建错误结果"""
         return ResultEntity(
             success=False,
