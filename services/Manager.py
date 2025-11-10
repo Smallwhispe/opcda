@@ -1,9 +1,8 @@
 import logging
 import time
 from concurrent.futures import ThreadPoolExecutor
-from typing import Dict, Optional, Any
-from cachetools import TTLCache
-
+from datetime import datetime
+from typing import Optional
 from models.DataView import DataView
 from services.DataViewService import DataViewService
 from config.Config import Config
@@ -22,9 +21,6 @@ class Manager:
         self.scheduler_executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="Manager-Scheduler")
         self.task_executor = ThreadPoolExecutor(max_workers=Config.CACHE_TASK_THREADS, thread_name_prefix="Manager-Task")
 
-        # 缓存
-        self.user_cache = TTLCache(maxsize=Config.CACHE_MAX_SIZE, ttl=Config.CACHE_TTL)
-
         # 控制标志
         self._running = False
 
@@ -39,7 +35,6 @@ class Manager:
 
         # # 使用线程池启动定时任务
         self.scheduler_executor.submit(self._schedule_cache_refresh)
-        self.scheduler_executor.submit(self._schedule_database_save)
 
         self.logger.info("Manager服务启动完成")
 
@@ -52,17 +47,6 @@ class Manager:
                 time.sleep(self.cache_frequency)
             except Exception as e:
                 self.logger.error(f"缓存刷新调度异常: {e}")
-                time.sleep(1)
-
-    def _schedule_database_save(self):
-        """定时保存到数据库"""
-        while self._running:
-            try:
-                # 使用任务线程池执行数据库保存
-                self.task_executor.submit(self.scheduled_batch_save)
-                time.sleep(self.database_frequency)
-            except Exception as e:
-                self.logger.error(f"数据库保存调度异常: {e}")
                 time.sleep(1)
 
     def refresh_cache(self):
@@ -83,60 +67,22 @@ class Manager:
         try:
             data_view = DataView()
             data_view.time = int(time.time())
-            # 模拟数据获取
+            # TODO 模拟数据获取
             time.sleep(0.1)
             return data_view
         except Exception as e:
             self.logger.error(f"[opc缓存刷新] - opc获取数据异常: {e}")
             return None
 
-    def save_to_cache(self, key: int, data_view: DataView):
+    def save_to_cache(self, key: datetime, data_view: DataView) -> Optional[bool]:
         """存入缓存"""
-        if key is None or data_view is None:
-            return
-
-        try:
-            if data_view.id is None:
-                self.logger.warning("[opc缓存刷新] - 尝试保存空数据")
-                return
-            self.user_cache[key] = data_view
-            self.logger.debug(f"数据成功保存到缓存，key: {key}")
-        except Exception as e:
-            self.logger.error(f"保存数据到缓存失败，key: {key}, 错误: {e}")
-
-    def scheduled_batch_save(self):
-        """定时批量保存到数据库"""
-        self.logger.info("[opc缓存刷新] - 开始保存缓存数据至数据库")
-        if len(self.user_cache) > 0:
-            self.logger.info(f"[opc缓存刷新] - 定时任务开始批量保存缓存数据，当前缓存大小: {len(self.user_cache)}")
-            cache_copy = dict(self.user_cache)
-            self.batch_save_to_database(cache_copy)
-
-        # 清理过期缓存
-        self.user_cache.expire()
-
-    def batch_save_to_database(self, data_map: Dict[int, DataView]):
-        """批量存入数据库"""
-        if not data_map:
-            self.logger.warning("[opc缓存刷新] - opc缓存为空")
-            return
-
-        try:
-            success_count = 0
-            for key, data_view in data_map.items():
-                if self.save_to_database(key, data_view):
-                    success_count += 1
-
-            self.logger.info(f"[opc缓存刷新] - 批量保存完成，共保存 {success_count}/{len(data_map)} 条数据")
-        except Exception as e:
-            self.logger.error(f"[opc缓存刷新] - 批量保存数据失败: {e}")
-
-    def save_to_database(self, key: int, data_view: DataView) -> bool:
-        """存入数据库"""
         if key is None or data_view is None:
             return False
 
         try:
+            if data_view.id is None:
+                self.logger.warning("[opc缓存刷新] - 尝试保存空数据")
+                return False
             result = DataViewService.save(data_view)
             if result:
                 self.logger.debug(f"[opc缓存刷新] - 数据成功保存到数据库，key: {key}")
@@ -144,23 +90,8 @@ class Manager:
                 self.logger.warning(f"[opc缓存刷新] - 数据保存到数据库失败，key: {key}")
             return result
         except Exception as e:
-            self.logger.error(f"[opc缓存刷新] - 保存数据到数据库失败，key: {key}, 错误: {e}")
+            self.logger.error(f"保存数据到缓存失败，key: {key}, 错误: {e}")
             return False
-
-    def get_from_cache(self, key: int) -> Optional[DataView]:
-        """从缓存获取数据"""
-        try:
-            return self.user_cache.get(key)
-        except Exception as e:
-            self.logger.error(f"[opc缓存] - 从缓存获取数据失败，key: {key}, 错误: {e}")
-            return None
-
-    def get_cache_status(self) -> Dict[str, Any]:
-        """获取缓存状态信息"""
-        return {
-            "缓存大小": len(self.user_cache),
-            "运行状态": "运行中" if self._running else "已停止"
-        }
 
     def shutdown(self):
         """关闭服务"""
@@ -169,12 +100,6 @@ class Manager:
 
         self.logger.info("Manager服务关闭中...")
         self._running = False
-
-        # 关闭前保存所有缓存数据到数据库
-        if len(self.user_cache) > 0:
-            self.logger.info(f"服务关闭前保存剩余缓存数据，数量: {len(self.user_cache)}")
-            remaining_data = dict(self.user_cache)
-            self.batch_save_to_database(remaining_data)
 
         # 关闭线程池
         self.scheduler_executor.shutdown(wait=False, cancel_futures=True)
