@@ -265,37 +265,40 @@ class DataViewService:
             return ResultEntityMethod.buildFailedResult(message="opc qr导出未知失败")
 
     @staticmethod
-    def save(request) -> bool:
+    def save(data_view_instance: 'DataView') -> bool:
+        """
+        接收 Manager 线程传入的 DataView 实例，并将其持久化到本地文件。
+
+        Args:
+            data_view_instance: 已经从 OPC 原始数据转换好的 DataView 实例。
+        """
         try:
-            # 对于 Flask：args 为空并不代表无效请求，这里仅做温和检查
-            data = request.get_json(silent=True) or {}
-            if not data:
-                logger.error("[opc数据存储] - 请求体为空或非 JSON")
-                return False
+            # ----------------------------------------------------
+            # 移除所有 Flask Request 和 JSON 解析逻辑
+            # 移除数据清洗和 Pydantic 实例化逻辑（因为数据已经实例化和清洗过）
+            # ----------------------------------------------------
 
-            # 只接收业务字段，id/time 由模型 default_factory 自动生成
-            allowed = {"dataType", "temperature", "flow", "pressure", "concentration", "quality"}
-            payload = {k: v for k, v in data.items() if k in allowed}
+            # 1. 序列化为一行，时间为 'YYYY-MM-DD HH:MM:SS'
+            # 直接使用传入的 DataView 实例
+            record = data_view_instance.to_dict()
 
-            # Pydantic v1：用 parse_obj（或 DataView(**payload) 也可以）
-            data_view = DataView(**payload)
-
-            # 序列化为一行，时间为 'YYYY-MM-DD HH:MM:SS'
-            record = data_view.to_dict()
-
-            # 读取 dataType
-            data_type = data_view.dataType
+            # 2. 读取 dataType
+            data_type = data_view_instance.dataType
             if not data_type:
                 data_type = "default"  # 可按需改默认
-            # 追加写入当日文件
+
+            # 3. 追加写入当日文件
+            # 假设 append_line 可以在该模块作用域内访问
             append_line(record, data_type)
 
             logger.info("[opc数据存储] - 本地写入成功: %s", record.get("id"))
             return True
 
-        except ValidationError as e:
-            logger.error("[opc数据存储] - 参数校验失败: %s", e, exc_info=True)
-            return False
+        # 由于 Manager 传入的已经是 DataView 实例，理论上不会有 ValidationError
+        # 但保留更通用的 Exception 捕获
         except Exception as e:
-            logger.error("[opc数据存储] - 未知失败: %s", e, exc_info=True)
+            # 注意：这里我们移除了对 'ValidationError' 的专门捕获，
+            # 因为数据在 Manager 线程中创建时就已经通过了 Pydantic 校验。
+            # 如果需要，可以将 ValidationError 捕获合并到这个通用捕获块中。
+            logger.error("[opc数据存储] - 写入文件未知失败: %s", e, exc_info=True)
             return False

@@ -2,8 +2,9 @@ import logging
 import time
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
-from typing import Optional
-from models.DataView import DataView
+from typing import Optional, Any, List, Dict
+from models.DataView import DataView, parse_opc_data_to_data_view
+from opc_connector import opc_client
 from services.DataViewService import DataViewService
 from config.Config import Config
 from vo.ResultEntity import ErrorCode
@@ -38,7 +39,7 @@ class Manager:
         self.logger.info("Manager服务启动完成")
 
     def schedule_database_refresh(self):
-        """定时刷新数据"""
+        """定时写入数据到本地文件"""
         while self._running:
             try:
                 # 使用任务线程池执行缓存刷新
@@ -49,10 +50,10 @@ class Manager:
                 time.sleep(1)
 
     def refresh_database(self):
-        """缓存刷新数据"""
         self.logger.info("[opc数据刷新] - opc数据刷新中")
         try:
-            data_view = self.catch_data_from_opc_client()
+            # 从服务器获取数据
+            data_view = self.catch_data_from_opc_client(opc_client)
             data_view.dataType = ErrorCode.COLLECT.get_msg()
             self.logger.info(f"[opc数据刷新] - 获取数据dataView为: {data_view}")
             if data_view and data_view.time:
@@ -61,20 +62,77 @@ class Manager:
             self.logger.error(f"[opc数据刷新] - opc数据刷新失败: {e}")
         self.logger.info("[opc数据刷新] - opc数据刷新结束")
 
-    def catch_data_from_opc_client(self) -> Optional[DataView]:
-        """从OPC服务器获取数据"""
+    # def catch_data_from_opc_client(self) -> Optional[DataView]:
+    #     """从OPC服务器获取数据"""
+    #     try:
+    #         data_view = DataView()
+    #         data_view.time = int(time.time())
+    #         # TODO 模拟数据获取
+    #         time.sleep(0.1)
+    #         return data_view
+    #     except Exception as e:
+    #         self.logger.error(f"[opc数据刷新] - opc获取数据异常: {e}")
+    #         return None
+    def catch_data_from_opc_client(self, opc_client: Any) -> Optional['DataView']:
+        """
+        从 OPC 服务器读取数据，将其转换为 DataView 模型，并返回。
+
+        Args:
+            opc_client: 已经连接好的 OpenOPC 客户端对象。
+
+        Returns:
+            Optional[DataView]: 成功时返回 DataView 实例，失败时返回 None。
+        """
+        """
+        从 OPC 服务器读取数据并以 JSON 格式返回。
+        """
+        TAG_TEMP = 'Bucket Brigade.Real8'
+        TAG_PRESS = 'Bucket Brigade.Real4'
+        TAG_FLOW = 'Bucket Brigade.Int4'
+        TAG_CONC = 'Bucket Brigade.String'
+        TAG_QUALITY = 'Bucket Brigade.Bool'
+
+        TAG_LIST_TO_READ = [
+            TAG_TEMP, TAG_PRESS, TAG_FLOW, TAG_CONC, TAG_QUALITY
+        ]
+        # 确保客户端已连接
+        if opc_client is None:
+            self.logger.error("[opc数据刷新] - OPC 客户端未初始化或连接")
+            return None
+
         try:
-            data_view = DataView()
-            data_view.time = int(time.time())
-            # TODO 模拟数据获取
-            time.sleep(0.1)
+            # 1. 从 OPC 服务器读取数据 (使用 dataGet 的逻辑)
+            # 假设 opc_client.read 返回一个元组列表: [(tag_name, value, quality, timestamp), ...]
+            read_data: List[tuple] = opc_client.read(TAG_LIST_TO_READ)
+
+            # 2. 转换为原始字典格式 (将列表转为键值对字典，便于解析函数处理)
+            opc_raw_data: Dict[str, Dict[str, Any]] = {}
+            for tag_name, value, quality, timestamp in read_data:
+                opc_raw_data[tag_name] = {
+                    "value": value,
+                    "quality": quality,
+                    "timestamp": timestamp
+                }
+
+            self.logger.info("OPC数据读取成功，开始转换。原始数据: %s", opc_raw_data)
+
+            # 3. 调用之前编写的转换函数，生成 DataView 实例
+            # 假设 data_type_tag 为 "opc_data"
+            data_view: 'DataView' = parse_opc_data_to_data_view(
+                opc_raw_data,
+                data_type_tag="opc_data"  # 可根据业务需求设定或从配置中读取
+            )
+
+            # 4. 成功返回 DataView 实例
             return data_view
+
         except Exception as e:
-            self.logger.error(f"[opc数据刷新] - opc获取数据异常: {e}")
+            # 如果 OPC 服务死掉、连接断开或数据转换失败，会在这里捕获到异常
+            self.logger.error(f"[opc数据刷新] - OPC数据获取或转换异常: {e}", exc_info=True)
             return None
 
     def save_to_database(self, key: datetime, data_view: DataView) -> Optional[bool]:
-        """存入缓存"""
+        """存入本地文件"""
         if key is None or data_view is None:
             return False
 

@@ -2,20 +2,23 @@ import os
 import json
 import logging
 from datetime import datetime, date
-from typing import Optional
-
-import pytz
+from typing import Optional, Any
+from zoneinfo import ZoneInfo  # 1. 使用 Python 3.11 内置的 zoneinfo
 
 from vo.ResultEntity import ResultEntity, ResultEntityMethod, ErrorCode
 
 logger = logging.getLogger()
-LOCAL_TZ = pytz.timezone("Asia/Shanghai")
+# 2. 使用 zoneinfo 定义时区
+LOCAL_TZ = ZoneInfo("Asia/Shanghai")
 DATA_DIR = "repository"
 EXT = ".ndjson"
 
+
+# --- 辅助函数 (文件处理) ---
 def ensure_data_dir():
     if not os.path.exists(DATA_DIR):
         os.makedirs(DATA_DIR)
+
 
 def date_to_fname(d: date, data_type: str) -> str:
     """data/<dataType>_YYYY-MM-DD.ndjson"""
@@ -23,46 +26,55 @@ def date_to_fname(d: date, data_type: str) -> str:
     fname = "{}_{}{}".format(data_type, d.isoformat(), EXT)
     return os.path.join(DATA_DIR, fname)
 
-def parse_dt_maybe(value) -> Optional[datetime]:
-    """将 str/datetime/时间戳 转为带 Asia/Shanghai 时区的 datetime；失败返回 None。"""
+
+# -----------------------------------------------------------------
+# !!! 3. 修复: 统一的 Python 3.11+ 解析器 !!!
+# -----------------------------------------------------------------
+def parse_dt_maybe(value: Any) -> Optional[datetime]:
+    """
+    [Python 3.11+] 尽力解析任何输入为 datetime 对象。
+    - 如果输入带时区 (e.g., +08:00)，则返回带时区的 datetime。
+    - 如果输入不带时区 (e.g., 17:00:00)，则返回不带时区的 (naive) datetime。
+    """
     if value is None:
         return None
     if isinstance(value, datetime):
-        #是否有时区
-        return value if value.tzinfo else LOCAL_TZ.localize(value)
+        return value  # 按原样返回
     if isinstance(value, (int, float)):
-        # 视为“秒”时间戳；如果传的是毫秒，请先在业务层 / 这里判断并除以 1000
-        return datetime.fromtimestamp(float(value), tz=LOCAL_TZ)
+        try:
+            ts_f = float(value)
+            if ts_f > 1_000_000_000_000:  # ms
+                ts_f = ts_f / 1000.0
+            # 返回带本地时区的时间戳
+            return datetime.fromtimestamp(ts_f, tz=LOCAL_TZ)
+        except Exception:
+            return None
     if isinstance(value, str):
         s = value.strip()
-        for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M", "%Y-%m-%d",
-                    "%Y/%m/%d %H:%M:%S", "%Y/%m/%d %H:%M", "%Y/%m/%d"):
-            try:
-                dt = datetime.strptime(s, fmt)
-                return LOCAL_TZ.localize(dt)
-            except Exception:
-                continue
-        # 简单 ISO 兜底
+        if not s:
+            return None
         try:
-            s2 = s.replace("T", " ").replace("Z", "")
-            for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M"):
-                try:
-                    dt = datetime.strptime(s2, fmt)
-                    return LOCAL_TZ.localize(dt)
-                except Exception:
-                    pass
+            # 替换第一个空格为 'T' 以兼容 ISO 格式 (e.g., "2025-11-10 17:00:00")
+            s_iso = s.replace(" ", "T", 1)
+            # fromisoformat 会自动保留或省略时区
+            return datetime.fromisoformat(s_iso)
         except Exception:
-            pass
+            logger.warning(f"Could not parse time string as ISO: {s}", exc_info=False)
+            return None
     return None
 
+
 def to_local_date(dt: Optional[datetime]) -> Optional[date]:
+    """[已修复] 安全地将任何 datetime 转换为本地日期"""
     if dt is None:
         return None
     if dt.tzinfo is None:
-        dt = LOCAL_TZ.localize(dt)
+        # 假定 naive 时间为本地时间
+        return dt.date()
     else:
-        dt = dt.astimezone(LOCAL_TZ)
-    return dt.date()
+        # 转换 aware 时间为本地时间
+        return dt.astimezone(LOCAL_TZ).date()
+
 
 def pick_file_for_day(data_dt: Optional[datetime], data_type: str) -> Optional[str]:
     """根据 data 指定的日期选择当天文件；找不到返回 None。"""
@@ -74,41 +86,49 @@ def pick_file_for_day(data_dt: Optional[datetime], data_type: str) -> Optional[s
     path = date_to_fname(d, data_type)
     return path if os.path.exists(path) else None
 
-def parse_epoch_to_dt(ts: Optional[int]) -> Optional[datetime]:
-    """把 int 时间戳（秒或毫秒）转为本地时区 datetime。"""
-    if ts is None:
-        return None
-    try:
-        ts_f = float(ts)
-        # 简单判断是否毫秒
-        if ts_f > 1_000_000_000_000:  # > 10^12 视为毫秒
-            ts_f = ts_f / 1000.0
-        return datetime.fromtimestamp(ts_f, tz=LOCAL_TZ)
-    except Exception:
-        return None
 
-
+# -----------------------------------------------------------------
+# !!! 4. DataCollectService 内部实现时间标准化 !!!
+# -----------------------------------------------------------------
 class DataCollectService:
+
+    @staticmethod
+    def _standardize_dt_for_compare(dt: Optional[datetime]) -> Optional[datetime]:
+        """
+        [内部辅助函数]
+        将用于比较的 datetime 对象统一标准化为 LOCAL_TZ。
+        """
+        if dt is None:
+            return None
+        if dt.tzinfo is None:
+            # 假设所有“无时区”的输入 (来自 Postman) 都是本地时间
+            return dt.replace(tzinfo=LOCAL_TZ)
+        else:
+            # 转换所有“带时区”的输入 (来自文件或UTC查询) 为本地时间
+            return dt.astimezone(LOCAL_TZ)
+
+    @staticmethod
+    def _get_sort_key(d: dict) -> datetime:
+        """[内部辅助函数] 安全地获取排序键"""
+        dt = parse_dt_maybe(d.get("time"))
+        dt_std = DataCollectService._standardize_dt_for_compare(dt)
+        if dt_std:
+            return dt_std
+        # 将无法解析的记录排在最后
+        return datetime.max.replace(tzinfo=LOCAL_TZ)
+
     @staticmethod
     def data_collect(request) -> ResultEntity:
         """
-        读取 data（当天）的文档，返回 [startTime, endTime] 范围内的记录（按时间升序）。
-        request: DataCollectReq
-          - page/size: 可为空（此接口不分页，若需要分页请用 data_collect_by_page）
-          - data: datetime（指定哪一天的文件）
-          - startTime, endTime: int（秒或毫秒时间戳）
+        [已修复] 读取 data（当天）的文档，返回 [startTime, endTime] 范围内的记录（按时间升序）。
         """
         try:
-            # 文件类型前缀：如需区分类型可改成你的前缀或从 request 里补充
             data_type = getattr(request, "dataType", None)
             if data_type is None:
                 data_type = "default"
 
-            # 解析当天文件
-            date_dt = getattr(request, "date", None)
-            if date_dt is None and isinstance(request, dict):
-                date_dt = request.get("date")
-            date_dt = parse_dt_maybe(date_dt)
+            # 1. 解析日期 (使用“只解析”函数)
+            date_dt = parse_dt_maybe(getattr(request, "date", None))
 
             file_path = pick_file_for_day(date_dt, data_type)
             if not file_path:
@@ -117,28 +137,31 @@ class DataCollectService:
                     ErrorCode.NO_DATA.get_code(), ErrorCode.NO_DATA.get_msg(), None
                 )
 
-            # 解析起止时间
+            # 2. 解析起止时间 (使用“只解析”函数)
             start_raw = getattr(request, "startTime", None)
             end_raw = getattr(request, "endTime", None)
-            if (start_raw is None or end_raw is None) and isinstance(request, dict):
-                start_raw = start_raw if start_raw is not None else request.get("startTime")
-                end_raw = end_raw if end_raw is not None else request.get("endTime")
 
-            start_dt = parse_epoch_to_dt(start_raw)
-            end_dt = parse_epoch_to_dt(end_raw)
+            start_dt = parse_dt_maybe(start_raw)
+            end_dt = parse_dt_maybe(end_raw)
 
-            # 如果两端都为空，默认整天
+            # 3. 标准化时间以便比较 (修复点)
+            start_dt = DataCollectService._standardize_dt_for_compare(start_dt)
+            end_dt = DataCollectService._standardize_dt_for_compare(end_dt)
+
+            logger.info("[data_collect] - 标准化时间窗口: start_dt=%s, end_dt=%s", start_dt, end_dt)
+
+            # 4. 如果两端都为空，默认整天
             if start_dt is None and end_dt is None:
-                # 整天范围：当天 00:00:00 ~ 23:59:59
                 day = to_local_date(date_dt)
-                start_dt = LOCAL_TZ.localize(datetime(day.year, day.month, day.day, 0, 0, 0))
-                end_dt = LOCAL_TZ.localize(datetime(day.year, day.month, day.day, 23, 59, 59))
+                if day is None:
+                    return ResultEntityMethod.buildFailedResult(message="必须提供 date 参数")
+                start_dt = datetime(day.year, day.month, day.day, 0, 0, 0, tzinfo=LOCAL_TZ)
+                end_dt = datetime(day.year, day.month, day.day, 23, 59, 59, 999999, tzinfo=LOCAL_TZ)
 
-            # 容错：若颠倒，交换
             if start_dt and end_dt and start_dt > end_dt:
                 start_dt, end_dt = end_dt, start_dt
 
-            # 读取当天文件并按窗口过滤
+            # 5. 读取当天文件并按窗口过滤
             records = []
             with open(file_path, "r", encoding="utf-8") as f:
                 for line in f:
@@ -150,19 +173,27 @@ class DataCollectService:
                     except Exception:
                         continue
 
+                    # 解析文件时间
                     t_dt = parse_dt_maybe(obj.get("time"))
+                    # 标准化文件时间
+                    t_dt = DataCollectService._standardize_dt_for_compare(t_dt)
+
                     if t_dt is None:
                         continue
+
+                    # 现在 start_dt, end_dt, t_dt 都在同一个时区 (LOCAL_TZ)
                     if start_dt and t_dt < start_dt:
                         continue
                     if end_dt and t_dt > end_dt:
                         continue
                     records.append(obj)
 
-            # 时间升序
-            records.sort(key=lambda d: parse_dt_maybe(d.get("time")) or LOCAL_TZ.localize(datetime.min))
+            # 6. 排序
+            records.sort(key=DataCollectService._get_sort_key)
 
             resp = {"dataList": records, "total": len(records)}
+            logger.info(records)
+            logger.info(f"[data_collect] - 查询到 {len(records)} 条记录")
             return ResultEntityMethod.buildSuccessResult(data=resp)
 
         except Exception as e:
@@ -172,20 +203,14 @@ class DataCollectService:
     @staticmethod
     def data_collect_by_page(request) -> ResultEntity:
         """
-        同上，但带分页：
-          - page: 默认 1
-          - size: 默认 100，上限 1000
+        [已修复] 同上，但带分页：
         """
         try:
             data_type = getattr(request, "dataType", None)
             if data_type is None:
                 data_type = "default"
 
-            # 当天文件
-            date_dt = getattr(request, "data", None)
-            if date_dt is None and isinstance(request, dict):
-                date_dt = request.get("data")
-            date_dt = parse_dt_maybe(date_dt)
+            date_dt = parse_dt_maybe(getattr(request, "data", None))
 
             file_path = pick_file_for_day(date_dt, data_type)
             if not file_path:
@@ -194,26 +219,25 @@ class DataCollectService:
                     ErrorCode.NO_DATA.get_code(), ErrorCode.NO_DATA.get_msg(), None
                 )
 
-            # 窗口
             start_raw = getattr(request, "startTime", None)
             end_raw = getattr(request, "endTime", None)
-            if (start_raw is None or end_raw is None) and isinstance(request, dict):
-                start_raw = start_raw if start_raw is not None else request.get("startTime")
-                end_raw = end_raw if end_raw is not None else request.get("endTime")
 
-            start_dt = parse_epoch_to_dt(start_raw)
-            end_dt = parse_epoch_to_dt(end_raw)
+            start_dt = parse_dt_maybe(start_raw)
+            end_dt = parse_dt_maybe(end_raw)
 
-            # 整天默认
+            start_dt = DataCollectService._standardize_dt_for_compare(start_dt)
+            end_dt = DataCollectService._standardize_dt_for_compare(end_dt)
+
             if start_dt is None and end_dt is None:
                 day = to_local_date(date_dt)
-                start_dt = LOCAL_TZ.localize(datetime(day.year, day.month, day.day, 0, 0, 0))
-                end_dt = LOCAL_TZ.localize(datetime(day.year, day.month, day.day, 23, 59, 59))
+                if day is None:
+                    return ResultEntityMethod.buildFailedResult(message="必须提供 data 参数")
+                start_dt = datetime(day.year, day.month, day.day, 0, 0, 0, tzinfo=LOCAL_TZ)
+                end_dt = datetime(day.year, day.month, day.day, 23, 59, 59, 999999, tzinfo=LOCAL_TZ)
 
             if start_dt and end_dt and start_dt > end_dt:
                 start_dt, end_dt = end_dt, start_dt
 
-            # 读取并过滤
             records = []
             with open(file_path, "r", encoding="utf-8") as f:
                 for line in f:
@@ -224,7 +248,10 @@ class DataCollectService:
                         obj = json.loads(s)
                     except Exception:
                         continue
+
                     t_dt = parse_dt_maybe(obj.get("time"))
+                    t_dt = DataCollectService._standardize_dt_for_compare(t_dt)
+
                     if t_dt is None:
                         continue
                     if start_dt and t_dt < start_dt:
@@ -233,16 +260,10 @@ class DataCollectService:
                         continue
                     records.append(obj)
 
-            # 排序
-            records.sort(key=lambda d: parse_dt_maybe(d.get("time")) or LOCAL_TZ.localize(datetime.min))
+            records.sort(key=DataCollectService._get_sort_key)
 
-            # 分页参数
             page = getattr(request, 'page', 1)
             size = getattr(request, 'size', 20)
-            if page is None:
-                page = 1
-            if size is None:
-                size = 20
             try:
                 page = int(page)
                 size = int(size)
@@ -254,12 +275,10 @@ class DataCollectService:
             if size < 1 or size > 1000:
                 size = 20
 
-            # 切片分页
             start_idx = (page - 1) * size
             end_idx = start_idx + size
             page_items = records[start_idx:end_idx]
 
-            # 当前页数量
             current_page_count = len(page_items)
 
             if current_page_count == 0:
@@ -272,7 +291,7 @@ class DataCollectService:
 
             resp = {
                 "dataList": page_items,
-                "total": current_page_count,  # ✅ 只返回当前页数量
+                "total": current_page_count,
             }
             return ResultEntityMethod.buildSuccessResult(data=resp)
 

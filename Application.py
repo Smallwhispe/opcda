@@ -13,6 +13,7 @@ app = Flask(__name__)
 cors = CORS(app, resources={r"/*": {"origins": "*", "supports_credentials": True,
                                                     "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS", "TRACE", "HEAD", "PATCH"],
                                     "allow_headers": ["Content-Type", "Authorization"]}})
+CORS(app, origins=["http://localhost:5173", "http://127.0.0.1:5173"])
 
 app.register_blueprint(dataViewBp)
 
@@ -38,7 +39,9 @@ if __name__ == '__main__':
         level=logging.INFO,
         format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
     )
-
+    log = logging.getLogger('werkzeug')
+    # 将 werkzeug 的日志级别设置为 WARNING，这样 INFO 级别的访问日志就不会显示了
+    log.setLevel(logging.WARNING)
     # 在后台线程中启动Manager
     manager_thread = threading.Thread(target=run_manager, daemon=True)
     manager_thread.start()
