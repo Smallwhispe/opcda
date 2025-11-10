@@ -6,8 +6,7 @@ class Config:
     """配置类"""
 
     # 线程配置
-    CACHE_FREQUENCY = int(os.getenv('CACHE_FREQUENCY', 10))  # 缓存刷新频率（秒）
-    DATABASE_FREQUENCY = int(os.getenv('DATABASE_FREQUENCY', 20))  # 数据库保存频率（秒）
+    DATABASE_FREQUENCY = int(os.getenv('DATABASE_FREQUENCY', 30))  # 数据库保存频率（秒）
 
     # 缓存配置
     CACHE_MAX_SIZE = int(os.getenv('CACHE_MAX_SIZE', 100))
