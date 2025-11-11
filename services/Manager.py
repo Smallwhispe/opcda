@@ -62,17 +62,6 @@ class Manager:
             self.logger.error(f"[opc数据刷新] - opc数据刷新失败: {e}")
         self.logger.info("[opc数据刷新] - opc数据刷新结束")
 
-    # def catch_data_from_opc_client(self) -> Optional[DataView]:
-    #     """从OPC服务器获取数据"""
-    #     try:
-    #         data_view = DataView()
-    #         data_view.time = int(time.time())
-    #         # TODO 模拟数据获取
-    #         time.sleep(0.1)
-    #         return data_view
-    #     except Exception as e:
-    #         self.logger.error(f"[opc数据刷新] - opc获取数据异常: {e}")
-    #         return None
     def catch_data_from_opc_client(self, opc_client: Any) -> Optional['DataView']:
         """
         从 OPC 服务器读取数据，将其转换为 DataView 模型，并返回。
@@ -86,14 +75,14 @@ class Manager:
         """
         从 OPC 服务器读取数据并以 JSON 格式返回。
         """
-        TAG_TEMP = 'Bucket Brigade.Real8'
-        TAG_PRESS = 'Bucket Brigade.Real4'
-        TAG_FLOW = 'Bucket Brigade.Int4'
-        TAG_CONC = 'Bucket Brigade.String'
-        TAG_QUALITY = 'Bucket Brigade.Bool'
+        tag_temp = 'Bucket Brigade.Real8'
+        tag_press = 'Bucket Brigade.Real4'
+        tag_flow = 'Bucket Brigade.Int4'
+        tag_conc = 'Bucket Brigade.String'
+        tag_quality = 'Bucket Brigade.Bool'
 
-        TAG_LIST_TO_READ = [
-            TAG_TEMP, TAG_PRESS, TAG_FLOW, TAG_CONC, TAG_QUALITY
+        tag_list_to_read = [
+            tag_temp, tag_press, tag_flow, tag_conc, tag_quality
         ]
         # 确保客户端已连接
         if opc_client is None:
@@ -103,7 +92,7 @@ class Manager:
         try:
             # 1. 从 OPC 服务器读取数据 (使用 dataGet 的逻辑)
             # 假设 opc_client.read 返回一个元组列表: [(tag_name, value, quality, timestamp), ...]
-            read_data: List[tuple] = opc_client.read(TAG_LIST_TO_READ)
+            read_data: List[tuple] = opc_client.read(tag_list_to_read)
 
             # 2. 转换为原始字典格式 (将列表转为键值对字典，便于解析函数处理)
             opc_raw_data: Dict[str, Dict[str, Any]] = {}

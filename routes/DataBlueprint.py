@@ -238,8 +238,9 @@ def download_file():
     except Exception as e:
         logger.error(f"[文件下载] - 未知失败: {e}", exc_info=True)
         return jsonify({"error": "服务器发送文件时出错"}), 500
-@dataViewBp.route('/qrQuery', methods=['GET'])
-def QrQuery():
+
+@dataViewBp.route('/qrQuery', methods=['POST'])
+def qr_query():
     try:
         if not request.args:
             return jsonify(ResultEntityMethod.buildFailedResult(ErrorCode.NO_REQUEST.get_code(), ErrorCode.NO_REQUEST.get_msg(),None)), 400

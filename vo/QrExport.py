@@ -10,7 +10,7 @@ class QrExportReq(BaseModel):
     def to_qr_data(self):
         # 排除特定字段后返回字典
         exclude_fields = {'filename', 'size', 'border', 'fill_color', 'back_color'}
-        data_dict = self.dict(exclude=exclude_fields)
+        data_dict = self.model_dump(exclude=exclude_fields)
         # 删除值为 None 的项
         return {k: v for k, v in data_dict.items() if v is not None}
 
