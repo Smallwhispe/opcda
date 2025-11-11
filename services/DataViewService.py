@@ -283,7 +283,7 @@ class DataViewService:
             return ResultEntityMethod.buildSuccessResult(data=resp)
 
         except Exception as e:
-            logger.error("[opc数据导出] - 本地数据导出未知异常: %s", e, exc_info=True)
+            logger.exception("[opc数据导出] - 本地数据导出未知异常: %s", e, exc_info=True)
             return ResultEntityMethod.buildFailedResult(message="本地数据导出失败")
 
     @staticmethod

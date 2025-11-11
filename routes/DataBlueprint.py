@@ -123,7 +123,7 @@ def dataCollect():
             )), 200
         else:
             # 业务失败直接返回 ResultEntity 的 JSON 封装
-            return jsonify(result_data.model_dump()), 500
+            return jsonify(result_data.data.model_dump()), 500
 
     except ValidationError as e:
         # Pydantic 校验失败
@@ -168,12 +168,10 @@ def dataCollectByPage():
         logger.error("[opc数据获取] - opc数据获取未知失败", e)
         return jsonify(ResultEntityMethod.buildFailedResult(ErrorCode.FAILURE.get_code(), ErrorCode.FAILURE.get_msg(), None)), 500
 
-@dataViewBp.route('/dataExport', methods=['GET'])
+@dataViewBp.route('/dataExport', methods=['POST'])
 def dataExport():
     try:
-        if not request.args:
-            return jsonify(ResultEntityMethod.buildFailedResult(ErrorCode.NO_REQUEST.get_code(), ErrorCode.NO_REQUEST.get_msg(),None)), 400
-        data = request.get_json()
+        data = request.get_json(silent=True)
         if not data:
             return jsonify(ResultEntityMethod.buildFailedResult(ErrorCode.NO_PARAM.get_code(), ErrorCode.NO_PARAM.get_msg(), None)), 400
         dataExportReq = DataExportReq.model_validate(data)
@@ -184,10 +182,12 @@ def dataExport():
         if result_data.success:
             # 构建响应
             response = DataExportRes(
-                total=result_data['total'],
-                dataList=result_data['dataList'],
+                total=result_data.data['total'],
+                dataList=result_data.data['dataList'],
+                fileName=result_data.data['fileName'],
+                filePath=result_data.data['filePath'],
             )
-            return jsonify(ResultEntityMethod.buildSuccessResult(ErrorCode.SUCCESS.get_code(), ErrorCode.SUCCESS.get_msg(),response)), 200
+            return jsonify(ResultEntityMethod.buildSuccessResult(ErrorCode.SUCCESS.get_code(), ErrorCode.SUCCESS.get_msg(),response.model_dump())), 200
         else:
             return jsonify(ResultEntityMethod.buildFailedResult(ErrorCode.SERVICE_FAILURE.get_code(), ErrorCode.SERVICE_FAILURE.get_msg(),None)), 500
     except ValidationError as e:

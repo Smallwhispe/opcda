@@ -16,6 +16,10 @@ class DataExportRes(BaseModel):
     total: Optional[int] = None
     #工艺数据展示
     dataList: Optional[List[DataView]] = None
+    #数据文件名称
+    fileName: Optional[str] = None
+    #数据文件路径
+    filePath: Optional[str] = None
 
 class QrQueryRes(BaseModel):
     message: Optional[str] = None
