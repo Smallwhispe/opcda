@@ -1,5 +1,7 @@
 import logging
-from flask import Blueprint, request, jsonify
+import os
+
+from flask import Blueprint, request, jsonify, send_from_directory, current_app
 from pydantic import ValidationError
 
 from services.DataCollectService import DataCollectService
@@ -196,6 +198,46 @@ def dataExport():
         logger.error("[opc数据导出] - opc数据导出未知失败", e)
         return jsonify(ResultEntityMethod.buildFailedResult(ErrorCode.FAILURE.get_code(), ErrorCode.FAILURE.get_msg(), None)), 500
 
+
+@dataViewBp.route('/download', methods=['GET'])
+def download_file():
+    """
+    安全地从 'export' 目录下载文件。
+    """
+
+    # ----------------------------------------------------
+    # !!! 关键安全修复:
+    # 永远不要接受客户端传入的 'filePath' (绝对路径)。
+    # 必须只接受 'fileName' (文件名)，然后在后端拼接安全路径。
+    # ----------------------------------------------------
+
+    # 1. 从 URL 参数中获取 *文件名*
+    filename = request.args.get('fileName')
+
+    if not filename:
+        return jsonify({"error": "缺少 'fileName' 参数"}), 400
+
+    # 2. 定义安全的文件目录
+    #    我们使用从 DataViewService 导入的 EXPORT_DIR 常量
+    #    并获取其相对于当前应用实例的绝对路径
+    safe_directory = os.path.join(current_app.root_path, "export")
+
+    logger.info(f"请求下载文件: {filename} 从目录: {safe_directory}")
+
+    try:
+        # 3. 使用 send_from_directory 安全地发送文件
+        #    as_attachment=True 会触发浏览器的“另存为”对话框
+        return send_from_directory(
+            directory=safe_directory,
+            path=filename,  # 注意：在 Flask 2.x+ 中，推荐使用 'path' 参数
+            as_attachment=True
+        )
+    except FileNotFoundError:
+        logger.error(f"文件未找到: {filename} in {safe_directory}")
+        return jsonify({"error": "文件未找到或无法访问"}), 404
+    except Exception as e:
+        logger.error(f"[文件下载] - 未知失败: {e}", exc_info=True)
+        return jsonify({"error": "服务器发送文件时出错"}), 500
 @dataViewBp.route('/qrQuery', methods=['GET'])
 def QrQuery():
     try:
