@@ -5,16 +5,15 @@ from typing import Optional
 import qrcode
 import csv
 import json
-from pydantic import ValidationError
 
 from models.DataView import DataView
-from vo import ResultEntity
+from vo.ResultEntity import ResultEntity
 from vo.QrExport import QrExportRes, QrExportReq
 from vo.ResultEntity import ResultEntityMethod, ErrorCode
 from vo.req import ModelPredictReq, DataExportReq, QrQueryReq
 from vo.res import QrQueryRes
 
-from datetime import datetime, date
+from datetime import datetime, date, timedelta
 
 import pytz
 logger = logging.getLogger()
@@ -80,21 +79,86 @@ def parse_dt_maybe(value) -> Optional[datetime]:
             pass
     return None
 
+def list_available_files_for_type(dtype: str):
+    """
+    返回 (day(date), path) 列表，仅包含该 dataType 的合法 ndjson 文件，按日期升序。
+    文件名格式：{dataType}_YYYY-MM-DD.ndjson
+    """
+    results = []
+    if not os.path.exists(DATA_DIR):
+        return results
+    prefix = f"{dtype}_"
+    for fn in os.listdir(DATA_DIR):
+        if not fn.startswith(prefix) or not fn.endswith(EXT):
+            continue
+        # 期望形如 {dataType}_YYYY-MM-DD.ndjson
+        date_part = fn[len(prefix):-len(EXT)]
+        try:
+            day = datetime.strptime(date_part, "%Y-%m-%d").date()
+            results.append((day, os.path.join(DATA_DIR, fn)))
+        except Exception:
+            continue
+    # 按日期升序
+    results.sort(key=lambda x: x[0])
+    return results
 
+def files_in_range(d1: date, d2: date, available):
+    """
+    在 available[(day, path)] 中筛选 [d1, d2] 区间(含端点)的文件，保持 available 的升序顺序。
+    """
+    if d1 > d2:
+        d1, d2 = d2, d1
+    days_set = set()
+    cur = d1
+    while cur <= d2:
+        days_set.add(cur)
+        cur = cur + timedelta(days=1)
+    return [(day, path) for (day, path) in available if day in days_set]
+
+def find_nearest_available_day(target: date, available):
+    """
+    在按日期升序的 available=[(day(date), path), ...] 中，找到最接近 target 的一天。
+    若有同样距离的前后两天，偏向较新的(靠后的)一天。
+    返回: [(day, path)] 或 []（若 available 为空）
+    """
+    if not available:
+        return []
+
+    # 先检查是否恰好存在
+    for d, p in available:
+        if d == target:
+            return [(d, p)]
+
+    # 计算最小绝对间隔；间隔相同则选更晚的日期
+    best = None      # (abs_diff, day, path)
+    for d, p in available:
+        diff = abs((d - target).days)
+        if best is None:
+            best = (diff, d, p)
+        else:
+            if diff < best[0]:
+                best = (diff, d, p)
+            elif diff == best[0] and d > best[1]:
+                best = (diff, d, p)
+
+    return [(best[1], best[2])] if best else []
 
 class DataViewService:
     @staticmethod
     def dataExport(request: 'DataExportReq') -> ResultEntity:
         """
-        将当天 ndjson 全量写为 .xls 保存到 export 目录，并返回前100条作为 dataList。
+        将指定日期范围内(含端点)的 ndjson 合并写为单个 .csv 保存到 export 目录，并返回前100条作为 dataList。
         入参:
           - request.date: datetime(可空, 空则今天/Asia/Shanghai)
           - request.dataType: str(可空, 空则 'default')
+        兜底策略:
+          - 只给了一个日期: 导出该天；若该天无文件则就近选择最近有数据的一天
+          - 两者都给但范围内无任何文件，或两者都没给: 导出“最新的”一个文件
         返回:
           - dataList: 前100条
-          - total: len(dataList)（当前页数量）
-          - filePath: 导出的 xls 文件绝对路径
-          - fileName: 导出的 xls 文件名
+          - total: len(dataList)
+          - filePath: 导出的 csv 文件绝对路径
+          - fileName: 导出的 csv 文件名
         """
         try:
             # 1) dataType
@@ -104,44 +168,77 @@ class DataViewService:
             if not data_type:
                 data_type = "default"
 
-            # 2) date（默认今天）
-            date_raw = getattr(request, "date", None)
-            if date_raw is None and isinstance(request, dict):
-                date_raw = request.get("date")
+            # 2) 解析 startDate / endDate（可能为空）
+            start_raw = getattr(request, "startDate", None)
+            end_raw = getattr(request, "endDate", None)
+            if start_raw is None and isinstance(request, dict):
+                start_raw = request.get("startDate")
+            if end_raw is None and isinstance(request, dict):
+                end_raw = request.get("endDate")
 
-            dt = parse_dt_maybe(date_raw)
-            if dt is None:
-                dt = datetime.now(LOCAL_TZ)
-            else:
-                dt = dt.astimezone(LOCAL_TZ) if dt.tzinfo else LOCAL_TZ.localize(dt)
+            start_dt = parse_dt_maybe(start_raw)
+            end_dt = parse_dt_maybe(end_raw)
 
-            day = dt.date()
+            # 统一到本地时区
+            if start_dt:
+                start_dt = start_dt.astimezone(LOCAL_TZ) if start_dt.tzinfo else LOCAL_TZ.localize(start_dt)
+            if end_dt:
+                end_dt = end_dt.astimezone(LOCAL_TZ) if end_dt.tzinfo else LOCAL_TZ.localize(end_dt)
 
-            # 3) 源文件路径
-            src_path = date_to_fname(day, data_type)   # 注意这里是 _date_to_fname
-            if not os.path.exists(src_path):
-                logger.info("[opc数据导出] - 当天文件不存在: %s", src_path)
-                # 按你们之前习惯：用 SuccessResult 返回 NO_DATA 编码与信息
-                return ResultEntityMethod.buildFailedResult(
-                    ErrorCode.NO_DATA.get_code(),
-                    ErrorCode.NO_DATA.get_msg(),
-                    None
-                )
+            # 3) 可用文件（该 dataType），按日期升序
+            available = list_available_files_for_type(data_type)
 
-            # 4) 读取 ndjson & 准备导出
+            # 4) 依据入参选择文件
+            selected_files = []  # [(day(date), path)]
+            if start_dt and end_dt:
+                selected_files = files_in_range(start_dt.date(), end_dt.date(), available)
+            elif start_dt and not end_dt:
+                target = start_dt.date()
+                selected_files = [(d, p) for (d, p) in available if d == target]
+                if not selected_files:
+                    selected_files = find_nearest_available_day(target, available)
+            elif end_dt and not start_dt:
+                target = end_dt.date()
+                selected_files = [(d, p) for (d, p) in available if d == target]
+                if not selected_files:
+                    selected_files = find_nearest_available_day(target, available)
+
+            # 若未选中任何文件，退化到“最新的一个文件”
+            if not selected_files:
+                if available:
+                    latest_day, latest_path = available[-1]
+                    selected_files = [(latest_day, latest_path)]
+                else:
+                    logger.info("[opc数据导出] - 无可用数据文件: %s", DATA_DIR)
+                    return ResultEntityMethod.buildFailedResult(
+                        ErrorCode.NO_DATA.get_code(),
+                        ErrorCode.NO_DATA.get_msg(),
+                        None
+                    )
+
+            # 5) 读取 ndjson & 准备导出
             first_100 = []
             total_rows = 0
             columns = ["id", "temperature", "flow", "pressure", "concentration", "time"]
 
-            # 5) 写 csv（全量）
+            # 6) 写 csv（合并全量）
             ensure_export_dir()
-            base_filename = "{}_{}.csv".format(data_type, day.isoformat())
+
+            # 组装导出文件名：单日 or 多日
+            if len(selected_files) == 1:
+                day_str = selected_files[0][0].isoformat()
+                base_filename = f"{data_type}_{day_str}.csv"
+            else:
+                start_str = selected_files[0][0].isoformat()
+                end_str = selected_files[-1][0].isoformat()
+                base_filename = f"{data_type}_{start_str}_to_{end_str}.csv"
+
             out_path = os.path.join(EXPORT_DIR, base_filename)
             if os.path.exists(out_path):
                 counter = 1
                 name_only, ext = os.path.splitext(base_filename)
                 while os.path.exists(out_path):
-                    new_name = "{}_{}{}".format(name_only, counter, ext)
+                    new_name = f"{name_only}_{counter}{ext}"
                     out_path = os.path.join(EXPORT_DIR, new_name)
                     counter += 1
             out_filename = os.path.basename(out_path)
@@ -150,29 +247,36 @@ class DataViewService:
                 writer = csv.DictWriter(csvfile, fieldnames=columns)
                 writer.writeheader()
 
-                with open(src_path, "r", encoding="utf-8") as f:
-                    for line in f:
-                        s = line.strip()
-                        if not s:
-                            continue
-                        try:
-                            obj = json.loads(s)
-                        except Exception:
-                            continue
+                # 依日期升序合并
+                for (day, src_path) in selected_files:
+                    if not os.path.exists(src_path):
+                        continue
+                    with open(src_path, "r", encoding="utf-8") as f:
+                        for line in f:
+                            s = line.strip()
+                            if not s:
+                                continue
+                            try:
+                                obj = json.loads(s)
+                            except Exception:
+                                continue
 
-                        if len(first_100) < 100:
-                            first_100.append(obj)
+                            if len(first_100) < 100:
+                                first_100.append(obj)
 
-                        row = {col: obj.get(col, "") for col in columns}
-                        writer.writerow(row)
-                        total_rows += 1
+                            row = {col: obj.get(col, "") for col in columns}
+                            writer.writerow(row)
+                            total_rows += 1
 
-            logger.info("[opc数据导出] - 已导出为 csv: %s (共 %d 行)", out_path, total_rows)
+            logger.info(
+                "[opc数据导出] - 已导出为 csv: %s (共 %d 行，合并 %d 个文件)",
+                out_path, total_rows, len(selected_files)
+            )
 
-            # 6) 返回“部分数据”（前100条）+ 导出文件信息
+            # 7) 返回“部分数据”（前100条）+ 导出文件信息
             resp = {
                 "dataList": first_100,
-                "total": len(first_100),     # 当前页数量（前100条）
+                "total": len(first_100),
                 "fileName": out_filename,
                 "filePath": os.path.abspath(out_path),
             }
@@ -192,6 +296,7 @@ class DataViewService:
             return ResultEntityMethod.buildSuccessResult(data=modelPredictRes)
         except Exception as e:
             logger.error("[opc数据导出] - opc数据导出未知异常", e)
+            return ResultEntityMethod.buildFailedResult(message="模型调用失败")
 
     @staticmethod
     def qrQuery(request: QrQueryReq) -> ResultEntity:
@@ -259,7 +364,7 @@ class DataViewService:
                 return ResultEntityMethod.buildSuccessResult(data=qrExportRes)
             except Exception as e:
                 logger.error("[qr 导出] - 生成二维码时出错:", e)
-                ResultEntityMethod.buildFailedResult(message="opc qr导出生成二维码出错")
+                return ResultEntityMethod.buildFailedResult(message="opc qr导出生成二维码出错")
         except Exception as e:
             logger.error("[qr 导出] - opc qr导出未知失败", e)
             return ResultEntityMethod.buildFailedResult(message="opc qr导出未知失败")

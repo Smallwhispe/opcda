@@ -21,7 +21,9 @@ class DataCollectReq(BaseModel):
 class DataExportReq(BaseModel):
     """数据导出请求"""
     #起始时间
-    date: Optional[datetime] = None
+    startDate: Optional[datetime] = None
+    #结束时间
+    endDate: Optional[datetime] = None
     #数据类型
     dataType: Optional[str] = None
 
