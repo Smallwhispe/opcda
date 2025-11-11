@@ -20,11 +20,11 @@ def ensure_data_dir():
         os.makedirs(DATA_DIR)
 
 
-def date_to_fname(d: date, data_type: str) -> str:
+def date_to_filename(d: date, data_type: str) -> str:
     """data/<dataType>_YYYY-MM-DD.ndjson"""
     ensure_data_dir()
-    fname = "{}_{}{}".format(data_type, d.isoformat(), EXT)
-    return os.path.join(DATA_DIR, fname)
+    filename = "{}_{}{}".format(data_type, d.isoformat(), EXT)
+    return os.path.join(DATA_DIR, filename)
 
 
 # -----------------------------------------------------------------
@@ -83,7 +83,7 @@ def pick_file_for_day(data_dt: Optional[datetime], data_type: str) -> Optional[s
     d = to_local_date(data_dt)
     if d is None:
         return None
-    path = date_to_fname(d, data_type)
+    path = date_to_filename(d, data_type)
     return path if os.path.exists(path) else None
 
 
@@ -196,8 +196,8 @@ class DataCollectService:
             logger.info(f"[data_collect] - 查询到 {len(records)} 条记录")
             return ResultEntityMethod.buildSuccessResult(data=resp)
 
-        except Exception as e:
-            logger.error("[opc本地读取] - data_collect 失败: %s", e, exc_info=True)
+        except Exception:
+            logger.exception("[opc本地读取] - data_collect 失败")
             return ResultEntityMethod.buildFailedResult(message="本地数据读取失败")
 
     @staticmethod
@@ -295,6 +295,6 @@ class DataCollectService:
             }
             return ResultEntityMethod.buildSuccessResult(data=resp)
 
-        except Exception as e:
-            logger.error("[opc本地分页] - 失败: %s", e, exc_info=True)
+        except Exception:
+            logger.exception("[opc本地分页] - 失败")
             return ResultEntityMethod.buildFailedResult(message="本地数据服务暂时不可用")

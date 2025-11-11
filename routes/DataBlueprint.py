@@ -13,24 +13,24 @@ dataViewBp = Blueprint('dataViewBp', __name__, url_prefix='/data')
 
 logger = logging.getLogger()
 @dataViewBp.route('/dataGet', methods=['GET'])
-def dataGet():
+def data_get():
     """
     从 OPC 服务器读取数据并以 JSON 格式返回。
     """
-    TAG_TEMP = 'Bucket Brigade.Real8'
-    TAG_PRESS = 'Bucket Brigade.Real4'
-    TAG_FLOW = 'Bucket Brigade.Int4'
-    TAG_CONC = 'Bucket Brigade.String'
-    TAG_QUALITY = 'Bucket Brigade.Bool'
+    tag_temp = 'Bucket Brigade.Real8'
+    tag_press = 'Bucket Brigade.Real4'
+    tag_flow = 'Bucket Brigade.Int4'
+    tag_conc = 'Bucket Brigade.String'
+    tag_quality = 'Bucket Brigade.Bool'
 
-    TAG_LIST_TO_READ = [
-        TAG_TEMP, TAG_PRESS, TAG_FLOW, TAG_CONC, TAG_QUALITY
+    tag_list_to_read = [
+        tag_temp, tag_press, tag_flow, tag_conc, tag_quality
     ]
     if opc_client is None:
         return jsonify({"error": "OPC 客户端未初始化"}), 500
 
     try:
-        read_data = opc_client.read(TAG_LIST_TO_READ)
+        read_data = opc_client.read(tag_list_to_read)
         results = {}
         for tag_name, value, quality, timestamp in read_data:
             results[tag_name] = {
@@ -45,61 +45,52 @@ def dataGet():
 
     except Exception as e:
         # 如果 OPC 服务死掉或连接断开，会在这里捕获到异常
-        print(f"API 错误: {e}")
+        logger.exception("[opc服务器连接] - 服务器连接未知异常")
         return jsonify({"error": str(e)}), 500
 @dataViewBp.route('/modelPredict', methods=['POST'])
-def modelPredict():
+def model_predict():
     try:
-        if not request.args:
-            return jsonify(ResultEntityMethod.buildFailedResult(ErrorCode.NOT_REQUEST.get_code(), ErrorCode.NOT_REQUEST.get_msg(),None)), 400
         data = request.get_json()
         if not data:
             return jsonify(ResultEntityMethod.buildFailedResult(ErrorCode.NO_PARAM.get_code(), ErrorCode.NO_PARAM.get_msg(), None)), 400
-        modelPredictReq = ModelPredictReq.model_validate(data)
+        model_predict_req = ModelPredictReq.model_validate(data)
 
         # 调用业务逻辑
-        result_data = DataViewService.modelPredict(modelPredictReq)
+        result_data = DataViewService.model_predict(model_predict_req)
 
         if result_data.success:
             # 构建响应
             response = ModelPredictRes(
-                version=result_data['version'],
-                startTime=result_data['startTime'],
-                endTime=result_data['endTime'],
-                produce=result_data['produce']
+                version=result_data.data['version'],
+                startTime=result_data.data['startTime'],
+                endTime=result_data.data['endTime'],
+                produce=result_data.data['produce']
             )
-            return jsonify(ResultEntityMethod.buildSuccessResult(ErrorCode.SUCCESS.get_code(), ErrorCode.SUCCESS.get_msg(),response)), 200
+            return jsonify(ResultEntityMethod.buildSuccessResult(ErrorCode.SUCCESS.get_code(), ErrorCode.SUCCESS.get_msg(),response.model_dump())), 200
         else:
             return jsonify(ResultEntityMethod.buildFailedResult(ErrorCode.SERVICE_FAILURE.get_code(), ErrorCode.SERVICE_FAILURE.get_msg(),None)), 500
     except ValidationError as e:
+        logger.error("[opc数据获取] - 参数传输错误:%s",e)
         return jsonify(ResultEntityMethod.buildFailedResult(ErrorCode.VALID_FAILURE.get_code(), ErrorCode.VALID_FAILURE.get_msg(), None)), 400
-    except Exception as e:
-        logger.error("[opc模型预测] - opc模型预测未知失败", e)
+    except Exception:
+        logger.exception("[opc模型预测] - opc模型预测未知失败")
         return jsonify(ResultEntityMethod.buildFailedResult(ErrorCode.FAILURE.get_code(), ErrorCode.FAILURE.get_msg(), None)), 500
 
 
-@dataViewBp.route('/dataCollect', methods=['GET'])
-def dataCollect():
+@dataViewBp.route('/dataCollect', methods=['POST'])
+def data_collect():
     """
     数据查询接口：简化版。
     """
     try:
-        # 1. 获取 URL 查询参数
-        data = request.args.to_dict()
+        data = request.get_json()
+        if not data:
+            return jsonify(ResultEntityMethod.buildFailedResult(ErrorCode.NO_PARAM.get_code(), ErrorCode.NO_PARAM.get_msg(), None)), 400
+        data_collect_req = DataCollectReq.model_validate(data)
 
-        # 检查是否有参数（保持原逻辑）
-        if not data and not request.args:
-            return jsonify(ResultEntityMethod.buildFailedResult(
-                ErrorCode.NO_PARAM.get_code(),
-                "缺少必要的查询参数",
-                None)), 400
-
-        # 2. Pydantic 校验 (只用于请求参数)
-        dataCollectReq = DataCollectReq.model_validate(data)
-
-        # 3. 调用业务逻辑
+        # 调用业务逻辑
         # result_data 是 ResultEntity 实例
-        result_data = DataCollectService.data_collect(dataCollectReq)
+        result_data = DataCollectService.data_collect(data_collect_req)
 
         # ----------------------------------------------------
         # 4. 响应处理：最简化逻辑
@@ -114,70 +105,56 @@ def dataCollect():
                 total=result_data.data['total'],
                 dataList=result_data.data['dataList'],
             )
-
-            return jsonify(ResultEntityMethod.buildSuccessResult(
-                ErrorCode.SUCCESS.get_code(),
-                ErrorCode.SUCCESS.get_msg(),
-                # 关键：手动转换为字典，解决 JSON 序列化问题
-                response_data.model_dump()
-            )), 200
+            return jsonify(ResultEntityMethod.buildSuccessResult(ErrorCode.SUCCESS.get_code(),ErrorCode.SUCCESS.get_msg(),response_data.model_dump())), 200
         else:
-            # 业务失败直接返回 ResultEntity 的 JSON 封装
-            return jsonify(result_data.data.model_dump()), 500
-
+            return jsonify(ResultEntityMethod.buildFailedResult(ErrorCode.SERVICE_FAILURE.get_code(), ErrorCode.SERVICE_FAILURE.get_msg(),None)), 500
     except ValidationError as e:
-        # Pydantic 校验失败
-        return jsonify(ResultEntityMethod.buildFailedResult(
-            ErrorCode.VALID_FAILURE.get_code(),
-            f"请求参数格式校验失败",
-            None)), 400
-
-    except Exception as e:
+        logger.error("[opc数据获取] - 参数传输错误:%s",e)
+        return jsonify(ResultEntityMethod.buildFailedResult(ErrorCode.VALID_FAILURE.get_code(), ErrorCode.VALID_FAILURE.get_msg(),None)), 400
+    except Exception:
         # 未知服务器错误
-        logger.error("[opc数据获取] - opc数据获取未知失败: %s", e, exc_info=True)
-        return jsonify(ResultEntityMethod.buildFailedResult(
-            ErrorCode.FAILURE.get_code(),
-            "服务器内部错误",
-            None)), 500
+        logger.exception("[opc数据获取] - opc数据获取未知失败")
+        return jsonify(ResultEntityMethod.buildFailedResult(ErrorCode.FAILURE.get_code(),ErrorCode.FAILURE.get_msg(),None)), 500
 
-@dataViewBp.route('/dataCollectByPage', methods=['GET'])
-def dataCollectByPage():
+@dataViewBp.route('/dataCollectByPage', methods=['POST'])
+def data_collect_by_page():
     try:
         if not request.args:
             return jsonify(ResultEntityMethod.buildFailedResult(ErrorCode.NO_REQUEST.get_code(), ErrorCode.NO_REQUEST.get_msg(),None)), 400
         data = request.get_json()
         if not data:
             return jsonify(ResultEntityMethod.buildFailedResult(ErrorCode.NO_PARAM.get_code(), ErrorCode.NO_PARAM.get_msg(), None)), 400
-        dataCollectReq = DataCollectReq.model_validate(data)
+        data_collect_req = DataCollectReq.model_validate(data)
 
         # 调用业务逻辑
-        result_data = DataCollectService.data_collect_by_page(dataCollectReq)
+        result_data = DataCollectService.data_collect_by_page(data_collect_req)
 
         if result_data.success:
             # 构建响应
             response = DataCollectRes(
-                total=result_data.data.total,
-                dataList=result_data.data.dataList,
+                total=result_data.data['total'],
+                dataList=result_data.data['dataList'],
             )
             return jsonify(ResultEntityMethod.buildSuccessResult(ErrorCode.SUCCESS.get_code(), ErrorCode.SUCCESS.get_msg(),response)), 200
         else:
             return jsonify(ResultEntityMethod.buildFailedResult(ErrorCode.SERVICE_FAILURE.get_code(), ErrorCode.SERVICE_FAILURE.get_msg(),None)), 500
     except ValidationError as e:
+        logger.error("[opc数据获取] - 参数传输错误: %s",e)
         return jsonify(ResultEntityMethod.buildFailedResult(ErrorCode.VALID_FAILURE.get_code(), ErrorCode.VALID_FAILURE.get_msg(), None)), 400
-    except Exception as e:
-        logger.error("[opc数据获取] - opc数据获取未知失败", e)
+    except Exception:
+        logger.exception("[opc数据获取] - opc数据获取未知失败")
         return jsonify(ResultEntityMethod.buildFailedResult(ErrorCode.FAILURE.get_code(), ErrorCode.FAILURE.get_msg(), None)), 500
 
 @dataViewBp.route('/dataExport', methods=['POST'])
-def dataExport():
+def data_export():
     try:
         data = request.get_json(silent=True)
         if not data:
-            return jsonify(ResultEntityMethod.buildFailedResult(ErrorCode.NO_PARAM.get_code(), ErrorCode.NO_PARAM.get_msg(), None)), 400
-        dataExportReq = DataExportReq.model_validate(data)
+            return jsonify(ResultEntityMethod.buildFailedResult(ErrorCode.NO_REQUEST.get_code(), ErrorCode.NO_REQUEST.get_msg(), None)), 400
+        data_export_req = DataExportReq.model_validate(data)
 
         # 调用业务逻辑
-        result_data = DataViewService.dataExport(dataExportReq)
+        result_data = DataViewService.data_export(data_export_req)
 
         if result_data.success:
             # 构建响应
@@ -191,62 +168,61 @@ def dataExport():
         else:
             return jsonify(ResultEntityMethod.buildFailedResult(ErrorCode.SERVICE_FAILURE.get_code(), ErrorCode.SERVICE_FAILURE.get_msg(),None)), 500
     except ValidationError as e:
+        logger.error("[opc数据导出] - 参数传输错误: %s",e)
         return jsonify(ResultEntityMethod.buildFailedResult(ErrorCode.VALID_FAILURE.get_code(), ErrorCode.VALID_FAILURE.get_msg(), None)), 400
-    except Exception as e:
-        logger.error("[opc数据导出] - opc数据导出未知失败", e)
+    except Exception:
+        logger.exception("[opc数据导出] - opc数据导出未知失败")
         return jsonify(ResultEntityMethod.buildFailedResult(ErrorCode.FAILURE.get_code(), ErrorCode.FAILURE.get_msg(), None)), 500
 
-@dataViewBp.route('/qrQuery', methods=['GET'])
-def QrQuery():
+@dataViewBp.route('/qrQuery', methods=['POST'])
+def qr_query():
     try:
-        if not request.args:
-            return jsonify(ResultEntityMethod.buildFailedResult(ErrorCode.NO_REQUEST.get_code(), ErrorCode.NO_REQUEST.get_msg(),None)), 400
         data = request.get_json()
         if not data:
-            return jsonify(ResultEntityMethod.buildFailedResult(ErrorCode.NO_PARAM.get_code(), ErrorCode.NO_PARAM.get_msg(), None)), 400
-        qrQueryReq = QrQueryReq.model_validate(data)
+            return jsonify(ResultEntityMethod.buildFailedResult(ErrorCode.NO_REQUEST.get_code(), ErrorCode.NO_REQUEST.get_msg(),None)), 400
+        qr_query_req = QrQueryReq.model_validate(data)
 
         # 调用业务逻辑
-        result_data = DataViewService.qrQuery(qrQueryReq)
+        result_data = DataViewService.qr_query(qr_query_req)
 
         if result_data.success:
             # 构建响应
             response = QrQueryRes(
-                message = result_data['message'],
-                type = result_data['type']
+                message = result_data.data['message'],
+                type = result_data.data['type']
             )
             return jsonify(ResultEntityMethod.buildSuccessResult(ErrorCode.SUCCESS.get_code(), ErrorCode.SUCCESS.get_msg(),response)), 200
         else:
             return jsonify(ResultEntityMethod.buildFailedResult(ErrorCode.SERVICE_FAILURE.get_code(), ErrorCode.SERVICE_FAILURE.get_msg(),None)), 500
     except ValidationError as e:
+        logger.error("[opc qr查询] - opc lims查询参数传输错误: %s",e)
         return jsonify(ResultEntityMethod.buildFailedResult(ErrorCode.VALID_FAILURE.get_code(), ErrorCode.VALID_FAILURE.get_msg(), None)), 400
-    except Exception as e:
-        logger.error("[opc qr查询] - opc lims查询未知失败", e)
+    except Exception:
+        logger.exception("[opc qr查询] - opc lims查询未知失败")
         return jsonify(ResultEntityMethod.buildFailedResult(ErrorCode.FAILURE.get_code(), ErrorCode.FAILURE.get_msg(), None)), 500
 
-@dataViewBp.route('/qrExport', methods=['GET'])
-def QrExport():
+@dataViewBp.route('/qrExport', methods=['POST'])
+def qr_export():
     try:
-        if not request.args:
-            return jsonify(ResultEntityMethod.buildFailedResult(ErrorCode.NO_REQUEST.get_code(), ErrorCode.NO_REQUEST.get_msg(),None)), 400
         data = request.get_json()
         if not data:
-            return jsonify(ResultEntityMethod.buildFailedResult(ErrorCode.NO_PARAM.get_code(), ErrorCode.NO_PARAM.get_msg(), None)), 400
-        qrExportReq = QrExportReq.model_validate(data)
+            return jsonify(ResultEntityMethod.buildFailedResult(ErrorCode.NO_REQUEST.get_code(), ErrorCode.NO_REQUEST.get_msg(),None)), 400
+        qr_export_req = QrExportReq.model_validate(data)
 
         # 调用业务逻辑
-        result_data = DataViewService.qrExport(qrExportReq)
+        result_data = DataViewService.qr_export(qr_export_req)
 
-        if result_data.success and result_data['data']:
+        if result_data.success and result_data.data['data']:
             # 构建响应
             response = QrExportRes(
-                exportSuccess = result_data['exportSuccess'],
+                exportSuccess = result_data.data['exportSuccess'],
             )
             return jsonify(ResultEntityMethod.buildSuccessResult(ErrorCode.SUCCESS.get_code(), ErrorCode.SUCCESS.get_msg(),response)), 200
         else:
             return jsonify(ResultEntityMethod.buildFailedResult(ErrorCode.SERVICE_FAILURE.get_code(), ErrorCode.SERVICE_FAILURE.get_msg(),None)), 500
     except ValidationError as e:
+        logger.error("[opc qr导出] - opc lims导出参数传输错误: %s",e)
         return jsonify(ResultEntityMethod.buildFailedResult(ErrorCode.VALID_FAILURE.get_code(), ErrorCode.VALID_FAILURE.get_msg(), None)), 400
-    except Exception as e:
-        logger.error("[opc qr查询] - opc lims查询未知失败", e)
+    except Exception:
+        logger.exception("[opc qr导出] - opc lims导出未知失败")
         return jsonify(ResultEntityMethod.buildFailedResult(ErrorCode.FAILURE.get_code(), ErrorCode.FAILURE.get_msg(), None)), 500

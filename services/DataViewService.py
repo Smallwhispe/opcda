@@ -27,11 +27,11 @@ def ensure_export_dir():
     if not os.path.exists(EXPORT_DIR):
         os.makedirs(EXPORT_DIR)
 
-def date_to_fname(d: date, data_type: str) -> str:
-    """data/<dataType>_YYYY-MM-DD.ndjson"""
-    ensure_export_dir()
-    fname = "{}_{}{}".format(data_type, d.isoformat(), EXT)
-    return os.path.join(DATA_DIR, fname)
+# def date_to_filename(d: date, data_type: str) -> str:
+#     """data/<dataType>_YYYY-MM-DD.ndjson"""
+#     ensure_export_dir()
+#     filename = "{}_{}{}".format(data_type, d.isoformat(), EXT)
+#     return os.path.join(DATA_DIR, filename)
 
 def today_file_path(data_type: str) -> str:
     """按本地时区(Asia/Shanghai)的日期命名文件"""
@@ -145,7 +145,7 @@ def find_nearest_available_day(target: date, available):
 
 class DataViewService:
     @staticmethod
-    def dataExport(request: 'DataExportReq') -> ResultEntity:
+    def data_export(request: 'DataExportReq') -> ResultEntity:
         """
         将指定日期范围内(含端点)的 ndjson 合并写为单个 .csv 保存到 export 目录，并返回前100条作为 dataList。
         入参:
@@ -282,36 +282,36 @@ class DataViewService:
             }
             return ResultEntityMethod.buildSuccessResult(data=resp)
 
-        except Exception as e:
-            logger.exception("[opc数据导出] - 本地数据导出未知异常: %s", e, exc_info=True)
+        except Exception:
+            logger.exception("[opc数据导出] - 本地数据导出未知异常")
             return ResultEntityMethod.buildFailedResult(message="本地数据导出失败")
 
     @staticmethod
-    def modelPredict(request: ModelPredictReq, modelPredictService=None) -> ResultEntity:
+    def model_predict(request: ModelPredictReq, model_predict_service=None) -> ResultEntity:
         try:
             ##TODO这里应该是调用师姐的模型预测模块函数
-            result = modelPredictService.modelPredict(request)
+            result = model_predict_service.modelPredict(request)
             # 将查询结果转换为字典列表
-            modelPredictRes = {'version': result.version, 'startTime': result.startTime, 'endTime': result.endTime, 'produce': result.produce}
-            return ResultEntityMethod.buildSuccessResult(data=modelPredictRes)
-        except Exception as e:
-            logger.error("[opc数据导出] - opc数据导出未知异常", e)
+            model_predict_res = {'version': result.version, 'startTime': result.startTime, 'endTime': result.endTime, 'produce': result.produce}
+            return ResultEntityMethod.buildSuccessResult(data=model_predict_res)
+        except Exception:
+            logger.exception("[opc数据导出] - opc数据导出未知异常")
             return ResultEntityMethod.buildFailedResult(message="模型调用失败")
 
     @staticmethod
-    def qrQuery(request: QrQueryReq) -> ResultEntity:
+    def qr_query(request: QrQueryReq) -> ResultEntity:
         try:
-            qrQueryRes = QrQueryRes(
+            qr_query_res = QrQueryRes(
                 message=request['message'],
                 type=request['type']
             )
-            return ResultEntityMethod.buildSuccessResult(data=qrQueryRes)
+            return ResultEntityMethod.buildSuccessResult(data=qr_query_res)
         except Exception as e:
-            logger.error("[opc qr扫描] - opc qr扫描未知失败", e)
+            logger.exception("[opc qr扫描] - opc qr扫描未知失败", e)
             return ResultEntityMethod.buildFailedResult(message="opc qr扫描未知失败")
 
     @staticmethod
-    def qrExport(request: QrExportReq) -> ResultEntity:
+    def qr_export(request: QrExportReq) -> ResultEntity:
         try:
 
             #带自定义选项但无文本的二维码生成
@@ -358,10 +358,10 @@ class DataViewService:
                 img.save(filepath)
                 logger.info(f"[qr 导出] - 二维码已成功生成并保存为: {filepath}")
                 logger.info(f"[qr 导出] - 编码的数据: {data}")
-                qrExportRes = QrExportRes(
+                qr_export_res = QrExportRes(
                     exportSuccess = True
                 )
-                return ResultEntityMethod.buildSuccessResult(data=qrExportRes)
+                return ResultEntityMethod.buildSuccessResult(data=qr_export_res)
             except Exception as e:
                 logger.error("[qr 导出] - 生成二维码时出错:", e)
                 return ResultEntityMethod.buildFailedResult(message="opc qr导出生成二维码出错")
