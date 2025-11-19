@@ -179,7 +179,7 @@ def dataExport():
         dataExportReq = DataExportReq.model_validate(data)
 
         # 调用业务逻辑
-        result_data = DataViewService.dataExport(dataExportReq)
+        result_data = DataViewService.data_export(dataExportReq)
 
         if result_data.success:
             # 构建响应
@@ -199,6 +199,51 @@ def dataExport():
         return jsonify(ResultEntityMethod.buildFailedResult(ErrorCode.FAILURE.get_code(), ErrorCode.FAILURE.get_msg(), None)), 500
 
 
+@dataViewBp.route('/dataPreview', methods=['GET'])
+def dataPreview():
+    try:
+        logger.info("Received data preview request with args: %s", request.args)
+        data = request.args.to_dict()
+        if not data:
+            return jsonify(
+                ResultEntityMethod.buildFailedResult(ErrorCode.NO_PARAM.get_code(), ErrorCode.NO_PARAM.get_msg(),
+                                                     None)), 400
+
+        # 复用 DataExportReq，因为筛选条件（日期、类型）是一样的
+        dataExportReq = DataExportReq.model_validate(data)
+
+        # 1. 调用业务逻辑 (变为 data_preview)
+        result_data = DataViewService.data_preview(dataExportReq)
+
+        if result_data.success:
+            # 2. 构建响应
+            # 注意：这里不再使用 DataExportRes，因为预览不需要 fileName 和 filePath
+            # 如果你有定义 DataPreviewRes (Pydantic Model)，可以在这里使用
+            response_payload = {
+                "total": result_data.data['total'],
+                "dataList": result_data.data['dataList']
+            }
+
+            return jsonify(ResultEntityMethod.buildSuccessResult(
+                ErrorCode.SUCCESS.get_code(),
+                ErrorCode.SUCCESS.get_msg(),
+                response_payload
+            )), 200
+        else:
+            return jsonify(ResultEntityMethod.buildFailedResult(
+                ErrorCode.SERVICE_FAILURE.get_code(),
+                ErrorCode.SERVICE_FAILURE.get_msg(),
+                None
+            )), 500
+
+    except ValidationError as e:
+        return jsonify(
+            ResultEntityMethod.buildFailedResult(ErrorCode.VALID_FAILURE.get_code(), ErrorCode.VALID_FAILURE.get_msg(),
+                                                 None)), 400
+    except Exception as e:
+        logger.error("[opc数据预览] - opc数据预览未知失败", e)
+        return jsonify(
+            ResultEntityMethod.buildFailedResult(ErrorCode.FAILURE.get_code(), ErrorCode.FAILURE.get_msg(), None)), 500
 @dataViewBp.route('/download', methods=['GET'])
 def download_file():
     """

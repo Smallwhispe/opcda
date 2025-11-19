@@ -287,6 +287,114 @@ class DataViewService:
             return ResultEntityMethod.buildFailedResult(message="本地数据导出失败")
 
     @staticmethod
+    def data_preview(request: 'DataExportReq') -> ResultEntity:
+        """
+        [修改版] 根据筛选策略获取 ndjson 数据。
+        不进行 CSV 导出，仅返回选定文件范围内的前 100 条数据用于预览。
+        """
+        try:
+            # 1) dataType 处理
+            data_type = getattr(request, "dataType", None)
+            if data_type is None and isinstance(request, dict):
+                data_type = request.get("dataType")
+            if not data_type:
+                data_type = "default"
+
+            # 2) 解析 startDate / endDate（可能为空）
+            start_raw = getattr(request, "startDate", None)
+            end_raw = getattr(request, "endDate", None)
+            if start_raw is None and isinstance(request, dict):
+                start_raw = request.get("startDate")
+            if end_raw is None and isinstance(request, dict):
+                end_raw = request.get("endDate")
+
+            start_dt = parse_dt_maybe(start_raw)
+            end_dt = parse_dt_maybe(end_raw)
+
+            # 统一到本地时区
+            if start_dt:
+                start_dt = start_dt.astimezone(LOCAL_TZ) if start_dt.tzinfo else LOCAL_TZ.localize(start_dt)
+            if end_dt:
+                end_dt = end_dt.astimezone(LOCAL_TZ) if end_dt.tzinfo else LOCAL_TZ.localize(end_dt)
+
+            # 3) 可用文件（该 dataType），按日期升序
+            available = list_available_files_for_type(data_type)
+
+            # 4) 依据入参选择文件 (逻辑保持不变)
+            selected_files = []  # [(day(date), path)]
+            if start_dt and end_dt:
+                selected_files = files_in_range(start_dt.date(), end_dt.date(), available)
+            elif start_dt and not end_dt:
+                target = start_dt.date()
+                selected_files = [(d, p) for (d, p) in available if d == target]
+                if not selected_files:
+                    selected_files = find_nearest_available_day(target, available)
+            elif end_dt and not start_dt:
+                target = end_dt.date()
+                selected_files = [(d, p) for (d, p) in available if d == target]
+                if not selected_files:
+                    selected_files = find_nearest_available_day(target, available)
+
+            # 若未选中任何文件，退化到“最新的一个文件”
+            if not selected_files:
+                if available:
+                    latest_day, latest_path = available[-1]
+                    selected_files = [(latest_day, latest_path)]
+                else:
+                    logger.info("[opc数据预览] - 无可用数据文件: %s", DATA_DIR)
+                    return ResultEntityMethod.buildFailedResult(
+                        ErrorCode.NO_DATA.get_code(),
+                        ErrorCode.NO_DATA.get_msg(),
+                        None
+                    )
+
+            # 5) 读取 ndjson (仅读取前100条)
+            first_100 = []
+
+            # 遍历选中的文件
+            for (day, src_path) in selected_files:
+                # 【优化】如果已经凑够100条，直接跳出文件循环，不再读取后续文件
+                if len(first_100) >= 100:
+                    break
+
+                if not os.path.exists(src_path):
+                    continue
+
+                try:
+                    with open(src_path, "r", encoding="utf-8") as f:
+                        for line in f:
+                            s = line.strip()
+                            if not s:
+                                continue
+                            try:
+                                obj = json.loads(s)
+                                first_100.append(obj)
+                            except Exception:
+                                continue
+
+                            # 【优化】单文件内凑够100条即停止
+                            if len(first_100) >= 100:
+                                break
+                except Exception as e:
+                    logger.warning(f"[opc数据预览] 读取文件 {src_path} 出错: {e}")
+                    continue
+
+            logger.info(
+                "[opc数据预览] - 获取数据成功 (返回 %d 条，来源覆盖 %d 个文件)",
+                len(first_100), len(selected_files)
+            )
+
+            # 6) 返回结果 (移除 fileName 和 filePath)
+            resp = {
+                "dataList": first_100,
+                "total": len(first_100)
+            }
+            return ResultEntityMethod.buildSuccessResult(data=resp)
+
+        except Exception:
+            logger.exception("[opc数据预览] - 数据获取未知异常")
+            return ResultEntityMethod.buildFailedResult(message="数据获取失败")
+    @staticmethod
     def model_predict(request: ModelPredictReq, model_predict_service=None) -> ResultEntity:
         try:
             ##TODO这里应该是调用师姐的模型预测模块函数

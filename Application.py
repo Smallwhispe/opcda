@@ -6,7 +6,6 @@ from flask import Flask
 from flask_cors import CORS
 from routes.DataBlueprint import dataViewBp
 from services.Manager import Manager
-
 app = Flask(__name__)
 # 创建一个Flask应用实例。`__name__`是当前模块的名称，Flask使用它来找到应用的位置，从而知道在哪里可以找到资源文件（如模板和静态文件）。
 
