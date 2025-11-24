@@ -1,12 +1,16 @@
 import os
 from typing import Dict, Any
+from dotenv import load_dotenv
+
+# ⬅ 在定义 Config 之前就加载 .env
+load_dotenv()
 
 
 class Config:
     """配置类"""
 
     # 线程配置
-    DATABASE_FREQUENCY = int(os.getenv('DATABASE_FREQUENCY', 30))  # 数据库保存频率（秒）
+    DATABASE_FREQUENCY = int(os.getenv('DATABASE_FREQUENCY'))  # 数据库保存频率（秒）
 
     # 缓存配置
     CACHE_MAX_SIZE = int(os.getenv('CACHE_MAX_SIZE', 100))
