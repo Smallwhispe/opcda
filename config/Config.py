@@ -3,18 +3,18 @@ import sys
 from typing import Dict, Any
 from dotenv import load_dotenv
 
-# ⬅ 在定义 Config 之前就加载 .env
-def get_base_dir():
-    if getattr(sys, "frozen", False):
-        # exe 运行时，sys.executable 指向 exe 的路径
-        return os.path.dirname(sys.executable)
-    # 开发运行时，使用项目根（根据你项目调整）
-    return os.path.dirname(os.path.abspath(__file__))
-
-BASE_DIR = get_base_dir()
-ENV_PATH = os.path.join(BASE_DIR, ".env")
-load_dotenv(ENV_PATH)
-
+# # ⬅ 在定义 Config 之前就加载 .env
+# def get_base_dir():
+#     if getattr(sys, "frozen", False):
+#         # exe 运行时，sys.executable 指向 exe 的路径
+#         return os.path.dirname(sys.executable)
+#     # 开发运行时，使用项目根（根据你项目调整）
+#     return os.path.dirname(os.path.abspath(__file__))
+#
+# BASE_DIR = get_base_dir()
+# ENV_PATH = os.path.join(BASE_DIR, ".env")
+# load_dotenv(ENV_PATH)
+load_dotenv()
 
 class Config:
     """配置类"""

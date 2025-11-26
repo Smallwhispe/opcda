@@ -194,7 +194,7 @@ class DataViewService:
             ##TODO这里应该是调用师姐的模型预测模块函数
             result = model_predict_service.modelPredict(request)
             # 将查询结果转换为字典列表
-            model_predict_res = {'version': result.version, 'startTime': result.startTime, 'endTime': result.endTime, 'produce': result.produce}
+            model_predict_res = {'time': result.time, 'produce': result.produce}
             return ResultEntityMethod.buildSuccessResult(data=model_predict_res)
         except Exception:
             logger.exception("[opc数据导出] - opc数据导出未知异常")

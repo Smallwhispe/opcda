@@ -15,7 +15,7 @@ def now_jst() -> datetime:
 
 
 class DataView(BaseModel):
-    id: str = Field(default_factory=lambda: uuid4().hex)
+    id: Optional[int] = None
     dataType: Optional[str] = None
     temperature: Optional[str] = None
     flow: Optional[str] = None

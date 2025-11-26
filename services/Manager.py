@@ -4,10 +4,13 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from typing import Optional, Any, List, Dict
 from models.DataView import DataView, parse_opc_data_to_data_view
+from models.PredictResult import PredictResult
 from opc_connector import opc_client
 from services.DataViewService import DataViewService
 from config.Config import Config
+from services.predict_result import insert_predict_record
 from vo.ResultEntity import ErrorCode
+from vo.req import ModelPredictReq
 
 logger = logging.getLogger(__name__)
 class Manager:
@@ -136,6 +139,31 @@ class Manager:
         except Exception as e:
             logger.error(f"保存数据到缓存失败，key: {key}, 错误: {e}")
             return False
+
+    def model_predict(data_view: DataView) -> bool:
+        # 构造模型预测请求值
+        request_pressure = ModelPredictReq()
+        request_c5 = ModelPredictReq()
+        request_bing_xi = ModelPredictReq()
+        request_gan_dian = ModelPredictReq()
+        # 分别调用四个模型
+        result_pressure = DataViewService.model_predict(request_pressure, )
+        result_c5 = DataViewService.model_predict(request_c5, )
+        result_bing_xi = DataViewService.model_predict(request_bing_xi, )
+        result_gan_dian = DataViewService.model_predict(request_gan_dian, )
+        predict_result = PredictResult(
+            pressure=result_pressure.data['produce'] if result_pressure.success else None,  # ← 注意替换字段
+            c5=result_c5.data['c5'] if result_c5.success else None,
+            bing_xi=result_bing_xi.data['bing_xi'] if result_bing_xi.success else None,
+            gan_dian=result_gan_dian.data['gan_dian'] if result_gan_dian.success else None,
+        )
+        return insert_predict_record({
+            "time": predict_result.time,
+            "pressure": predict_result.pressure,
+            "c5": predict_result.c5,
+            "bing_xi": predict_result.bing_xi,
+            "gan_dian": predict_result.gan_dian,
+        })
 
     def shutdown(self):
         """关闭服务"""

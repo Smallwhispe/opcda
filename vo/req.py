@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import Optional, Dict, Any
 from datetime import datetime
 from pydantic import BaseModel
 
@@ -52,7 +52,9 @@ class ModelPredictReq(BaseModel):
     #模型预测截止时间
     endTime: Optional[int] = None
     #工艺参数
-    produce: Optional[Produce] = None
+    produce: Optional[Dict[str, Any]] = None
+
+    # produce: Optional[Produce] = None
     # 添加这行配置, 允许嵌套的produce不是默认类型的存在
     model_config = {
         "arbitrary_types_allowed": True

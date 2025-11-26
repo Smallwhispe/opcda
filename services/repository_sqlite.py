@@ -104,7 +104,7 @@ def normalize_quality(q: Any) -> Optional[int]:
         return 0
     return None
 
-def insert_one_record(data_type: str, data: dict) -> None:
+def insert_one_record(data_type: str, data: dict) -> bool:
     if data_type is None:
         data_type = "default"
 
@@ -113,7 +113,7 @@ def insert_one_record(data_type: str, data: dict) -> None:
     dt = standardize_dt(dt)
     if dt is None:
         logger.debug("insert_one_record: 时间解析失败，忽略该记录: %s", data)
-        return
+        return False
     ts = dt_to_ts(dt)
 
     # 处理 quality（boolean -> 存 0/1）
@@ -150,8 +150,10 @@ def insert_one_record(data_type: str, data: dict) -> None:
         conn.commit()
     except Exception:
         logger.exception("insert_one_record 写入失败")
+        return False
     finally:
         conn.close()
+        return True
 
 # ---------- 查询：按时间窗口 ----------
 def query_by_time_range(data_type: str, start_ts: int, end_ts: int) -> List[Dict[str, Any]]:
