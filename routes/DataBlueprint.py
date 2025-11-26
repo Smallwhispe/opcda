@@ -49,63 +49,21 @@ def dataGet():
         # 如果 OPC 服务死掉或连接断开，会在这里捕获到异常
         print(f"API 错误: {e}")
         return jsonify({"error": str(e)}), 500
-@dataViewBp.route('/modelPredict', methods=['POST'])
-def modelPredict():
-    try:
-        if not request.args:
-            return jsonify(ResultEntityMethod.buildFailedResult(ErrorCode.NOT_REQUEST.get_code(), ErrorCode.NOT_REQUEST.get_msg(),None)), 400
-        data = request.get_json()
-        if not data:
-            return jsonify(ResultEntityMethod.buildFailedResult(ErrorCode.NO_PARAM.get_code(), ErrorCode.NO_PARAM.get_msg(), None)), 400
-        modelPredictReq = ModelPredictReq.model_validate(data)
 
-        # 调用业务逻辑
-        result_data = DataViewService.modelPredict(modelPredictReq)
-
-        if result_data.success:
-            # 构建响应
-            response = ModelPredictRes(
-                version=result_data['version'],
-                startTime=result_data['startTime'],
-                endTime=result_data['endTime'],
-                produce=result_data['produce']
-            )
-            return jsonify(ResultEntityMethod.buildSuccessResult(ErrorCode.SUCCESS.get_code(), ErrorCode.SUCCESS.get_msg(),response)), 200
-        else:
-            return jsonify(ResultEntityMethod.buildFailedResult(ErrorCode.SERVICE_FAILURE.get_code(), ErrorCode.SERVICE_FAILURE.get_msg(),None)), 500
-    except ValidationError as e:
-        return jsonify(ResultEntityMethod.buildFailedResult(ErrorCode.VALID_FAILURE.get_code(), ErrorCode.VALID_FAILURE.get_msg(), None)), 400
-    except Exception as e:
-        logger.error("[opc模型预测] - opc模型预测未知失败", e)
-        return jsonify(ResultEntityMethod.buildFailedResult(ErrorCode.FAILURE.get_code(), ErrorCode.FAILURE.get_msg(), None)), 500
-
-
-@dataViewBp.route('/dataCollect', methods=['GET'])
+@dataViewBp.route('/dataCollect', methods=['POST'])
 def dataCollect():
     """
     数据查询接口：简化版。
     """
     try:
-        # 1. 获取 URL 查询参数
-        data = request.args.to_dict()
-
-        # 检查是否有参数（保持原逻辑）
-        if not data and not request.args:
-            return jsonify(ResultEntityMethod.buildFailedResult(
-                ErrorCode.NO_PARAM.get_code(),
-                "缺少必要的查询参数",
-                None)), 400
-
-        # 2. Pydantic 校验 (只用于请求参数)
+        data = request.get_json(silent=True)
+        if not data:
+            return jsonify(ResultEntityMethod.buildFailedResult(ErrorCode.NO_PARAM.get_code(), ErrorCode.NO_PARAM.get_msg(),None)), 400
         dataCollectReq = DataCollectReq.model_validate(data)
 
-        # 3. 调用业务逻辑
-        # result_data 是 ResultEntity 实例
+        # 调用业务逻辑
         result_data = DataCollectService.data_collect(dataCollectReq)
 
-        # ----------------------------------------------------
-        # 4. 响应处理：最简化逻辑
-        # ----------------------------------------------------
         if result_data.success:
 
             # 直接使用业务层返回的数据字典作为构造 DataCollectRes 的输入
@@ -142,12 +100,10 @@ def dataCollect():
             "服务器内部错误",
             None)), 500
 
-@dataViewBp.route('/dataCollectByPage', methods=['GET'])
+@dataViewBp.route('/dataCollectByPage', methods=['POST'])
 def dataCollectByPage():
     try:
-        if not request.args:
-            return jsonify(ResultEntityMethod.buildFailedResult(ErrorCode.NO_REQUEST.get_code(), ErrorCode.NO_REQUEST.get_msg(),None)), 400
-        data = request.get_json()
+        data = request.get_json(silent=True)
         if not data:
             return jsonify(ResultEntityMethod.buildFailedResult(ErrorCode.NO_PARAM.get_code(), ErrorCode.NO_PARAM.get_msg(), None)), 400
         dataCollectReq = DataCollectReq.model_validate(data)
@@ -158,10 +114,10 @@ def dataCollectByPage():
         if result_data.success:
             # 构建响应
             response = DataCollectRes(
-                total=result_data.data.total,
-                dataList=result_data.data.dataList,
+                total=result_data.data['total'],
+                dataList=result_data.data['dataList'],
             )
-            return jsonify(ResultEntityMethod.buildSuccessResult(ErrorCode.SUCCESS.get_code(), ErrorCode.SUCCESS.get_msg(),response)), 200
+            return jsonify(ResultEntityMethod.buildSuccessResult(ErrorCode.SUCCESS.get_code(), ErrorCode.SUCCESS.get_msg(),response.model_dump())), 200
         else:
             return jsonify(ResultEntityMethod.buildFailedResult(ErrorCode.SERVICE_FAILURE.get_code(), ErrorCode.SERVICE_FAILURE.get_msg(),None)), 500
     except ValidationError as e:
@@ -170,40 +126,11 @@ def dataCollectByPage():
         logger.error("[opc数据获取] - opc数据获取未知失败", e)
         return jsonify(ResultEntityMethod.buildFailedResult(ErrorCode.FAILURE.get_code(), ErrorCode.FAILURE.get_msg(), None)), 500
 
-@dataViewBp.route('/dataExport', methods=['POST'])
-def dataExport():
-    try:
-        data = request.get_json(silent=True)
-        if not data:
-            return jsonify(ResultEntityMethod.buildFailedResult(ErrorCode.NO_PARAM.get_code(), ErrorCode.NO_PARAM.get_msg(), None)), 400
-        dataExportReq = DataExportReq.model_validate(data)
-
-        # 调用业务逻辑
-        result_data = DataViewService.data_export(dataExportReq)
-
-        if result_data.success:
-            # 构建响应
-            response = DataExportRes(
-                total=result_data.data['total'],
-                dataList=result_data.data['dataList'],
-                fileName=result_data.data['fileName'],
-                filePath=result_data.data['filePath'],
-            )
-            return jsonify(ResultEntityMethod.buildSuccessResult(ErrorCode.SUCCESS.get_code(), ErrorCode.SUCCESS.get_msg(),response.model_dump())), 200
-        else:
-            return jsonify(ResultEntityMethod.buildFailedResult(ErrorCode.SERVICE_FAILURE.get_code(), ErrorCode.SERVICE_FAILURE.get_msg(),None)), 500
-    except ValidationError as e:
-        return jsonify(ResultEntityMethod.buildFailedResult(ErrorCode.VALID_FAILURE.get_code(), ErrorCode.VALID_FAILURE.get_msg(), None)), 400
-    except Exception as e:
-        logger.error("[opc数据导出] - opc数据导出未知失败", e)
-        return jsonify(ResultEntityMethod.buildFailedResult(ErrorCode.FAILURE.get_code(), ErrorCode.FAILURE.get_msg(), None)), 500
-
-
-@dataViewBp.route('/dataPreview', methods=['GET'])
+@dataViewBp.route('/dataPreview', methods=['POST'])
 def dataPreview():
     try:
         logger.info("Received data preview request with args: %s", request.args)
-        data = request.args.to_dict()
+        data = request.get_json(silent=True)
         if not data:
             return jsonify(
                 ResultEntityMethod.buildFailedResult(ErrorCode.NO_PARAM.get_code(), ErrorCode.NO_PARAM.get_msg(),
@@ -244,6 +171,36 @@ def dataPreview():
         logger.error("[opc数据预览] - opc数据预览未知失败", e)
         return jsonify(
             ResultEntityMethod.buildFailedResult(ErrorCode.FAILURE.get_code(), ErrorCode.FAILURE.get_msg(), None)), 500
+
+@dataViewBp.route('/dataExport', methods=['POST'])
+def dataExport():
+    try:
+        data = request.get_json(silent=True)
+        if not data:
+            return jsonify(ResultEntityMethod.buildFailedResult(ErrorCode.NO_PARAM.get_code(), ErrorCode.NO_PARAM.get_msg(), None)), 400
+        dataExportReq = DataExportReq.model_validate(data)
+
+        # 调用业务逻辑
+        result_data = DataViewService.data_export(dataExportReq)
+
+        if result_data.success:
+            # 构建响应
+            response = DataExportRes(
+                total=result_data.data['total'],
+                dataList=result_data.data['dataList'],
+                fileName=result_data.data['fileName'],
+                filePath=result_data.data['filePath'],
+            )
+            return jsonify(ResultEntityMethod.buildSuccessResult(ErrorCode.SUCCESS.get_code(), ErrorCode.SUCCESS.get_msg(),response.model_dump())), 200
+        else:
+            return jsonify(ResultEntityMethod.buildFailedResult(ErrorCode.SERVICE_FAILURE.get_code(), ErrorCode.SERVICE_FAILURE.get_msg(),None)), 500
+    except ValidationError as e:
+        return jsonify(ResultEntityMethod.buildFailedResult(ErrorCode.VALID_FAILURE.get_code(), ErrorCode.VALID_FAILURE.get_msg(), None)), 400
+    except Exception as e:
+        logger.error("[opc数据导出] - opc数据导出未知失败", e)
+        return jsonify(ResultEntityMethod.buildFailedResult(ErrorCode.FAILURE.get_code(), ErrorCode.FAILURE.get_msg(), None)), 500
+
+
 @dataViewBp.route('/download', methods=['GET'])
 def download_file():
     """
@@ -284,6 +241,36 @@ def download_file():
         logger.error(f"[文件下载] - 未知失败: {e}", exc_info=True)
         return jsonify({"error": "服务器发送文件时出错"}), 500
 
+@dataViewBp.route('/modelPredict', methods=['POST'])
+def modelPredict():
+    try:
+        if not request.args:
+            return jsonify(ResultEntityMethod.buildFailedResult(ErrorCode.NOT_REQUEST.get_code(), ErrorCode.NOT_REQUEST.get_msg(),None)), 400
+        data = request.get_json()
+        if not data:
+            return jsonify(ResultEntityMethod.buildFailedResult(ErrorCode.NO_PARAM.get_code(), ErrorCode.NO_PARAM.get_msg(), None)), 400
+        modelPredictReq = ModelPredictReq.model_validate(data)
+
+        # 调用业务逻辑
+        result_data = DataViewService.modelPredict(modelPredictReq)
+
+        if result_data.success:
+            # 构建响应
+            response = ModelPredictRes(
+                version=result_data['version'],
+                startTime=result_data['startTime'],
+                endTime=result_data['endTime'],
+                produce=result_data['produce']
+            )
+            return jsonify(ResultEntityMethod.buildSuccessResult(ErrorCode.SUCCESS.get_code(), ErrorCode.SUCCESS.get_msg(),response)), 200
+        else:
+            return jsonify(ResultEntityMethod.buildFailedResult(ErrorCode.SERVICE_FAILURE.get_code(), ErrorCode.SERVICE_FAILURE.get_msg(),None)), 500
+    except ValidationError as e:
+        return jsonify(ResultEntityMethod.buildFailedResult(ErrorCode.VALID_FAILURE.get_code(), ErrorCode.VALID_FAILURE.get_msg(), None)), 400
+    except Exception as e:
+        logger.error("[opc模型预测] - opc模型预测未知失败", e)
+        return jsonify(ResultEntityMethod.buildFailedResult(ErrorCode.FAILURE.get_code(), ErrorCode.FAILURE.get_msg(), None)), 500
+
 @dataViewBp.route('/qrQuery', methods=['POST'])
 def qr_query():
     try:
@@ -295,7 +282,7 @@ def qr_query():
         qrQueryReq = QrQueryReq.model_validate(data)
 
         # 调用业务逻辑
-        result_data = DataViewService.qrQuery(qrQueryReq)
+        result_data = DataViewService.qr_query(qrQueryReq)
 
         if result_data.success:
             # 构建响应
@@ -315,15 +302,13 @@ def qr_query():
 @dataViewBp.route('/qrExport', methods=['GET'])
 def QrExport():
     try:
-        if not request.args:
-            return jsonify(ResultEntityMethod.buildFailedResult(ErrorCode.NO_REQUEST.get_code(), ErrorCode.NO_REQUEST.get_msg(),None)), 400
         data = request.get_json()
         if not data:
             return jsonify(ResultEntityMethod.buildFailedResult(ErrorCode.NO_PARAM.get_code(), ErrorCode.NO_PARAM.get_msg(), None)), 400
         qrExportReq = QrExportReq.model_validate(data)
 
         # 调用业务逻辑
-        result_data = DataViewService.qrExport(qrExportReq)
+        result_data = DataViewService.qr_export(qrExportReq)
 
         if result_data.success and result_data['data']:
             # 构建响应

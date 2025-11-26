@@ -11,8 +11,6 @@ class DataCollectReq(BaseModel):
     size: Optional[int] = None
     #数据类型
     dataType: Optional[str] = None
-    #日期
-    date: Optional[datetime] = None
     #起始时间
     startTime: Optional[datetime] = None
     #截止时间
@@ -32,12 +30,17 @@ class QrQueryReq(BaseModel):
     type: Optional[str] = None
 
 class Produce:
-    #分馏塔顶温度
-    temperature: Optional[str] = None
-    #分馏塔顶压力
-    pressure: Optional[str] = None
-    #粗汽油流量
-    liquid: Optional[str] = None
+    arg2_ti1352_pv: Optional[str] = None
+    arg2_ti1329_pv: Optional[str] = None
+    arg2_ti1328_pv: Optional[str] = None
+    arg2_pic1306_pv: Optional[str] = None
+    arg2_ti1338_pv: Optional[str] = None
+    arg2_fic1308_pv: Optional[str] = None
+    arg2_fic1309_pv: Optional[str] = None
+    arg2_fic1310_pv: Optional[str] = None
+    arg2_fic1303_pv: Optional[str] = None
+    arg2_fic1311_pv: Optional[str] = None
+    arg2_ti1330_pv: Optional[str] = None
 
 
 class ModelPredictReq(BaseModel):
