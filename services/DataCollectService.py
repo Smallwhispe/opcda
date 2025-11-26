@@ -10,7 +10,7 @@ from services.repository_sqlite import (
 
 from vo.ResultEntity import ResultEntity, ResultEntityMethod, ErrorCode
 
-logger = logging.getLogger()
+logger = logging.getLogger(__name__)
 LOCAL_TZ = ZoneInfo("Asia/Shanghai")
 
 class DataCollectService:

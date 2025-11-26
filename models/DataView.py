@@ -1,3 +1,4 @@
+import logging
 from datetime import datetime
 from typing import Optional, Any, Dict
 from uuid import uuid4
@@ -6,7 +7,7 @@ import pytz
 from pydantic import BaseModel, Field
 
 LOCAL_TZ = pytz.timezone("Asia/Shanghai")
-
+logger = logging.getLogger(__name__)
 
 def now_jst() -> datetime:
     # 生成带时区的当前时间（pytz 的推荐写法）

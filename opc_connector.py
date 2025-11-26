@@ -1,7 +1,9 @@
 import OpenOPC
 import sys
 import atexit  # 用于在程序退出时自动关闭连接
+import logging
 
+logger = logging.getLogger(__name__)
 # --- 配置 ---
 OPC_SERVER_NAME = 'Matrikon.OPC.Simulation.1'
 # 必须：填入您的 OpenOPCService.py 所在虚拟机的 IP 地址

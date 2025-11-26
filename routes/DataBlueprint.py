@@ -13,7 +13,7 @@ from vo.res import ModelPredictRes, DataCollectRes, DataExportRes, QrQueryRes
 from opc_connector import opc_client  # <-- 导入我们共享的客户端
 dataViewBp = Blueprint('dataViewBp', __name__, url_prefix='/data')
 
-logger = logging.getLogger()
+logger = logging.getLogger(__name__)
 @dataViewBp.route('/dataGet', methods=['GET'])
 def dataGet():
     """

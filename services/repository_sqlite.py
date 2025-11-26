@@ -12,7 +12,7 @@ from services.time_utils import (
     dt_to_ts,
     to_iso_from_ts
 )
-logger = logging.getLogger()
+logger = logging.getLogger(__name__)
 LOCAL_TZ = ZoneInfo("Asia/Shanghai")
 
 DATA_DIR = "repository"

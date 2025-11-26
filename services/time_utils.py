@@ -3,7 +3,7 @@ from datetime import datetime, date
 from typing import Optional, Any
 from zoneinfo import ZoneInfo
 
-logger = logging.getLogger()
+logger = logging.getLogger(__name__)
 
 LOCAL_TZ = ZoneInfo("Asia/Shanghai")
 

@@ -19,7 +19,7 @@ from vo.res import QrQueryRes
 from datetime import datetime
 
 import pytz
-logger = logging.getLogger()
+logger = logging.getLogger(__name__)
 LOCAL_TZ = pytz.timezone("Asia/Shanghai")
 
 DATA_DIR = "repository"
