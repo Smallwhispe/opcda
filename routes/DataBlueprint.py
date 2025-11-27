@@ -1,6 +1,7 @@
 import logging
 import os
 
+from dotenv import load_dotenv
 from flask import Blueprint, request, jsonify, send_from_directory, current_app
 from pydantic import ValidationError
 
@@ -14,39 +15,56 @@ from opc_connector import opc_client  # <-- 导入我们共享的客户端
 dataViewBp = Blueprint('dataViewBp', __name__, url_prefix='/data')
 
 logger = logging.getLogger()
+load_dotenv()
+
 @dataViewBp.route('/dataGet', methods=['GET'])
 def dataGet():
     """
     从 OPC 服务器读取数据并以 JSON 格式返回。
+    读取的点位列表由 .env 文件中的 OPC_TAGS 配置决定。
     """
-    TAG_TEMP = 'Bucket Brigade.Real8'
-    TAG_PRESS = 'Bucket Brigade.Real4'
-    TAG_FLOW = 'Bucket Brigade.Int4'
-    TAG_CONC = 'Bucket Brigade.String'
-    TAG_QUALITY = 'Bucket Brigade.Bool'
 
-    TAG_LIST_TO_READ = [
-        TAG_TEMP, TAG_PRESS, TAG_FLOW, TAG_CONC, TAG_QUALITY
-    ]
+    # 1. 从环境变量读取配置字符串
+    # 第二个参数是默认值，防止 .env 没配时报错
+    tags_env_str = os.getenv('OPC_TAGS', '')
+
+    # 2. 将字符串转换为列表
+    if tags_env_str:
+        # split(',') 按逗号分割
+        # strip() 去除每个点位名可能存在的首尾空格 (防止配置文件手误写了空格)
+        TAG_LIST_TO_READ = [tag.strip() for tag in tags_env_str.split(',') if tag.strip()]
+    else:
+        # 如果 .env 没配，给一个空列表或者默认的 Bucket Brigade 列表作为后备
+        TAG_LIST_TO_READ = []
+        print("警告: .env 中未找到 OPC_TAGS 配置")
+
+    # 检查客户端状态
     if opc_client is None:
         return jsonify({"error": "OPC 客户端未初始化"}), 500
 
+    # 检查是否有标签可读
+    if not TAG_LIST_TO_READ:
+        return jsonify({"error": "没有配置需要读取的 OPC 标签"}), 400
+
     try:
+        # 3. 批量读取
         read_data = opc_client.read(TAG_LIST_TO_READ)
+
         results = {}
-        for tag_name, value, quality, timestamp in read_data:
-            results[tag_name] = {
-                "value": value,
-                "quality": quality,
-                "timestamp": timestamp
-            }
-
-
-        # 将完整的字典作为 JSON 发送给前端
+        # OpenOPC 返回的结构通常是 (tag_name, value, quality, timestamp)
+        for item in read_data:
+            # 做个简单的长度保护，防止数据解包失败
+            if len(item) >= 4:
+                tag_name, value, quality, timestamp = item[:4]
+                results[tag_name] = {
+                    "value": value,
+                    "quality": quality,
+                    "timestamp": timestamp
+                }
+        print(f"成功读取 OPC 数据: {results}")
         return jsonify(results)
 
     except Exception as e:
-        # 如果 OPC 服务死掉或连接断开，会在这里捕获到异常
         print(f"API 错误: {e}")
         return jsonify({"error": str(e)}), 500
 
@@ -62,6 +80,7 @@ def dataCollect():
         dataCollectReq = DataCollectReq.model_validate(data)
 
         # 调用业务逻辑
+        logger.info("Received data collect request: %s", dataCollectReq)
         result_data = DataCollectService.data_collect(dataCollectReq)
 
         if result_data.success:

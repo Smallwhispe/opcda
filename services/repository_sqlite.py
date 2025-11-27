@@ -2,16 +2,40 @@ import os
 import json
 import sqlite3
 import logging
-from typing import Any, List, Dict
-from typing import Optional
+from typing import Any, List, Dict, Union
 from zoneinfo import ZoneInfo
+from dotenv import load_dotenv
 
+load_dotenv()
+# ==========================================
+# 全局配置加载
+# ==========================================
+def load_tag_map():
+    """
+    从 .env 读取并解析 OPC_TAG_MAP
+    返回格式: [('tic1201b', 'TIC1201B.PIDA.PV'), ...]
+    """
+    raw_json = os.getenv("OPC_TAG_MAP", "{}")
+    try:
+        tag_dict = json.loads(raw_json)
+        # 将字典转换为列表元组，适配原有代码逻辑
+        return list(tag_dict.items())
+    except json.JSONDecodeError as e:
+        logger.error(f"❌ 解析 .env 中的 OPC_TAG_MAP 失败: {e}")
+        # 如果解析失败，返回空列表或硬编码的默认值作为兜底
+        return []
+
+GLOBAL_TAG_MAP = load_tag_map()
+import time
+from models.DataView import DataView
+# 假设 services.time_utils 依然存在
 from services.time_utils import (
     parse_dt_maybe,
     standardize_dt,
     dt_to_ts,
     to_iso_from_ts
 )
+
 logger = logging.getLogger()
 LOCAL_TZ = ZoneInfo("Asia/Shanghai")
 
@@ -21,7 +45,7 @@ DB_PATH = os.path.join(DATA_DIR, DB_FILENAME)
 
 
 # =========================
-# 初始化
+# 1. 初始化 (建表)
 # =========================
 def init_db():
     os.makedirs(DATA_DIR, exist_ok=True)
@@ -29,149 +53,231 @@ def init_db():
     try:
         cur = conn.cursor()
 
-        # 建表（字段类型按用户要求：除了 quality（bool->int）和 ts 外，其余用 TEXT）
+        # ⚠️ 必须先删除旧表，因为主键定义变了
+        # cur.execute("DROP TABLE IF EXISTS opc_data;")
+
         cur.execute("""
         CREATE TABLE IF NOT EXISTS opc_data (
-            id            INTEGER PRIMARY KEY AUTOINCREMENT,
+            id            TEXT PRIMARY KEY,      -- 直接存储 UUID，不自增
             data_type     TEXT DEFAULT 'default',
             ts            INTEGER NOT NULL,
-            quality       INTEGER,
-            temperature   TEXT,
-            flow          TEXT,
-            pressure      TEXT,
-            concentration TEXT,
-            payload       TEXT,
+
+            -- 数值列
+            tic1201b      REAL,
+            tic1345       REAL,
+            ti1306        REAL,
+            ti1329        REAL,
+            ti1352a       REAL,
+            fic1303       REAL,
+            fic1309       REAL,
+            fi1314        REAL,
+            pic1302       REAL,
+
+            quality_info  TEXT,
+
+            -- 联合唯一索引依然保留，防止同一时间点重复写入
             UNIQUE(data_type, ts)
         );
         """)
 
-        # 索引：按 data_type + ts 查询最常用
+        # 索引
         cur.execute("""
         CREATE INDEX IF NOT EXISTS idx_opc_type_ts
         ON opc_data (data_type, ts);
         """)
 
-        # 可选的仅 ts 索引（如果你常按全局时间查询）
-        cur.execute("""
-        CREATE INDEX IF NOT EXISTS idx_opc_ts
-        ON opc_data (ts);
-        """)
-
         conn.commit()
-
-        # 推荐的 PRAGMA 设置（在生产环境中可在应用启动时执行一次）
-        try:
-            # WAL 模式能提升读并发（写仍序列化）
-            cur.execute("PRAGMA journal_mode=WAL;")
-            # 折中设置，既保证一定的安全性也提升性能
-            cur.execute("PRAGMA synchronous=NORMAL;")
-            cur.execute("PRAGMA temp_store=MEMORY;")
-            # cache_size 为负值表示以 KB 为单位的大小（例如 -20000 -> 20000 pages）
-            # 但更通用是使用页数：这里我们不强制改 page_size，仅设置 cache_size 以增加缓存
-            cur.execute("PRAGMA cache_size = -20000;")  # 约 20k pages（page 默认 4096B -> ~80MB）
-            # mmap_size 提升大文件读取速度（如果平台支持）
-            cur.execute("PRAGMA mmap_size = 268435456;")  # 256MB
-            conn.commit()
-        except Exception:
-            # 一些 SQLite 构建可能不支持 mmap_size 等 PRAGMA，忽略其错误
-            logger.debug("PRAGMA 执行有异常（可能不被支持），继续。", exc_info=True)
-
     finally:
         conn.close()
 
-# ---------- 写入 ----------
-def normalize_quality(q: Any) -> Optional[int]:
+
+# =========================
+# 2. 写入逻辑
+# =========================
+def insert_one_record(data_view: DataView) -> None:
     """
-    将各种 quality 表示规范为 0/1：
-    - 布尔 True -> 1, False -> 0
-    - 数字 0 -> 0, 非 0 -> 1
-    - 字符串 "true"/"1"/"yes" -> 1, "false"/"0"/"no" -> 0
-    - None -> None
+    插入一条记录。
+    已修改：直接使用 DataView.id (UUID) 作为主键插入，不使用自增 ID。
     """
-    if q is None:
-        return None
-    if isinstance(q, bool):
-        return 1 if q else 0
-    if isinstance(q, (int, float)):
+    # 1. 获取基础信息
+    data_type = data_view.dataType if data_view.dataType else "default"
+    ts = int(data_view.time.timestamp())
+
+    # --- 新增：获取 UUID ---
+    record_id = data_view.id
+
+    # 2. 获取映射配置
+    tag_map = GLOBAL_TAG_MAP
+
+    values_to_insert = {}
+    quality_map = {}
+
+    for attr_name, full_tag_name in tag_map:
+        # A. 提取数值
+        # getattr 安全获取，如果 DataView 缺少该属性则返回 None
+        raw_val = getattr(data_view, attr_name, None)
         try:
-            return 1 if int(q) != 0 else 0
-        except Exception:
-            return None
-    s = str(q).strip().lower()
-    if s in ("true", "1", "yes", "y", "t"):
-        return 1
-    if s in ("false", "0", "no", "n", "f"):
-        return 0
-    return None
+            val = float(raw_val) if raw_val is not None else None
+        except (ValueError, TypeError):
+            val = None
+        values_to_insert[attr_name] = val
 
-def insert_one_record(data_type: str, data: dict) -> None:
-    if data_type is None:
-        data_type = "default"
+        # B. 提取质量
+        qual = data_view.qualities.get(full_tag_name, 'Bad')
+        quality_map[full_tag_name] = str(qual)
 
-    # 解析时间
-    dt = parse_dt_maybe(data.get("time"))
-    dt = standardize_dt(dt)
-    if dt is None:
-        logger.debug("insert_one_record: 时间解析失败，忽略该记录: %s", data)
-        return
-    ts = dt_to_ts(dt)
+    # 3. 序列化质量信息
+    quality_json = json.dumps(quality_map, ensure_ascii=False)
 
-    # 处理 quality（boolean -> 存 0/1）
-    quality = normalize_quality(data.get("quality"))
-
-    # 其余字段按用户说明为字符串 -> 直接取字符串（如果为 None 则存 NULL）
-    def get_str_field(key: str) -> Optional[str]:
-        v = data.get(key)
-        if v is None:
-            return None
-        # 保证存入数据库的是字符串（避免直接存 dict/list）
-        if isinstance(v, (dict, list)):
-            try:
-                return json.dumps(v, ensure_ascii=False)
-            except Exception:
-                return str(v)
-        return str(v)
-
-    temperature = get_str_field("temperature") or get_str_field("temp") or get_str_field("value")
-    flow = get_str_field("flow")
-    pressure = get_str_field("pressure")
-    concentration = get_str_field("concentration")
-
-    payload = json.dumps(data, ensure_ascii=False)
-
+    # 4. 执行 SQL
     conn = sqlite3.connect(DB_PATH)
     try:
         cur = conn.cursor()
-        cur.execute("""
-            INSERT OR IGNORE INTO opc_data
-                (data_type, ts, quality, temperature, flow, pressure, concentration, payload)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        """, (data_type, ts, quality, temperature, flow, pressure, concentration, payload))
+
+        # --- 修改点：SQL 语句增加 id 列 ---
+        sql = """
+            INSERT OR IGNORE INTO opc_data (
+                id, 
+                data_type, ts,
+                tic1201b, tic1345, ti1306, ti1329, ti1352a,
+                fic1303, fic1309, fi1314,
+                pic1302,
+                quality_info
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """
+
+        # --- 修改点：参数元组增加 record_id，并使用 .get() 防止 KeyError ---
+        cur.execute(sql, (
+            record_id,  # 插入 UUID
+            data_type,
+            ts,
+            values_to_insert.get('tic1201b'),
+            values_to_insert.get('tic1345'),
+            values_to_insert.get('ti1306'),
+            values_to_insert.get('ti1329'),
+            values_to_insert.get('ti1352a'),
+            values_to_insert.get('fic1303'),
+            values_to_insert.get('fic1309'),
+            values_to_insert.get('fi1314'),
+            values_to_insert.get('pic1302'),
+            quality_json
+        ))
         conn.commit()
-    except Exception:
-        logger.exception("insert_one_record 写入失败")
+    except Exception as e:
+        logger.exception(f"insert_one_record error: {e}")
     finally:
         conn.close()
 
-# ---------- 查询：按时间窗口 ----------
+
+# =========================
+# 3. 查询逻辑
+# =========================
+# 定义中国时区 (UTC+8)
+from datetime import datetime, timezone, timedelta
+CN_TZ = timezone(timedelta(hours=8))
+
+
+def _rows_to_dicts(rows: list) -> list:
+    """
+    将数据库行转为 JSON 字典，并将时间戳转换为中国格式时间
+    """
+    results = []
+
+    for row in rows:
+        # 1. 转为字典
+        item = dict(row)
+
+        # 2. [ID] 处理
+        if item.get('id'):
+            item['id'] = str(item['id'])
+
+        # 3. [dataType] 处理
+        raw_type = item.pop('data_type', None)
+        item['dataType'] = str(raw_type) if raw_type else None
+
+        # 4. [qualities] 处理
+        q_str = item.pop('quality_info', None)
+        item['qualities'] = {}
+        if q_str:
+            try:
+                item['qualities'] = json.loads(q_str)
+            except:
+                pass
+
+        # 5. [time] 处理 (核心修改)
+        ts_val = item.pop('ts', None)
+        item['time'] = None
+
+        if ts_val:
+            try:
+                # 兼容毫秒级时间戳
+                timestamp_sec = ts_val / 1000.0 if ts_val > 10000000000 else ts_val
+
+                # 1. 转为 datetime 对象，并指定为中国时区
+                dt = datetime.fromtimestamp(timestamp_sec, CN_TZ)
+
+                # 2. 【关键修改在这里】
+                item['time'] = dt
+
+            except Exception as e:
+                logger.error(f"时间转换出错: {e}")
+                item['time'] = str(ts_val)
+
+        results.append(item)
+
+    # 打印一条日志验证格式
+    if results:
+        logger.info("首条时间结果: %s", results[0].get('time'))
+
+    return results
+
+def get_recent_n(data_type: str, n: int = 300) -> List[Dict[str, Any]]:
+    if data_type is None: data_type = "default"
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    try:
+        cur = conn.cursor()
+        # 记得查询 quality_info
+        cur.execute(f"""
+            SELECT data_type, ts,quality_info,
+                   tic1201b, tic1345, ti1306, ti1329, ti1352a,
+                   fic1303, fic1309, fi1314,
+                   pic1302
+            FROM opc_data
+            WHERE data_type = ?
+            ORDER BY ts DESC
+            LIMIT ?
+        """, (data_type, n))
+        rows = cur.fetchall()
+    except Exception:
+        rows = []
+    finally:
+        conn.close()
+
+    results = _rows_to_dicts(rows)
+    results.reverse()
+    return results
+
 def query_by_time_range(data_type: str, start_ts: int, end_ts: int) -> List[Dict[str, Any]]:
     """
-    查询 [start_ts, end_ts] 区间内指定 data_type 的记录，按 ts 升序返回。
-    返回每条记录为 dict，字段：
-      - time (ISO string)
-      - ts (int)
-      - quality (int or None)
-      - temperature, flow, pressure, concentration (原始字符串或 None)
-      - payload (原始 JSON 字符串解析为 dict，如果可解析)
+    按时间范围查询 (ts >= start AND ts <= end)
     """
     if data_type is None:
         data_type = "default"
-
+    logger.info("query_by_time_range - data_type=%s, start_ts=%d, end_ts=%d", data_type, start_ts, end_ts)
     conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row  # 必须开启，以便通过列名访问
     try:
         cur = conn.cursor()
+        # 显式查询所有数值列 + quality_info
         cur.execute("""
-            SELECT ts, quality, temperature, flow, pressure, concentration, payload
+            SELECT id, 
+                   data_type, 
+                   ts,
+                   quality_info,
+                   tic1201b, tic1345, ti1306, ti1329, ti1352a,
+                   fic1303, fic1309, fi1314,
+                   pic1302
             FROM opc_data
             WHERE data_type = ?
               AND ts >= ?
@@ -179,21 +285,17 @@ def query_by_time_range(data_type: str, start_ts: int, end_ts: int) -> List[Dict
             ORDER BY ts ASC
         """, (data_type, start_ts, end_ts))
         rows = cur.fetchall()
+        logger.info("query_by_time_range - 查询到 %d 条记录", len(rows))
+        logger.info("query_by_time_range - 首条记录: %s", dict(rows[0]) if rows else "无记录")
     except Exception:
         logger.exception("query_by_time_range 执行失败")
         rows = []
     finally:
         conn.close()
 
-    results: List[Dict[str, Any]] = []
-    for ts, quality, temperature, flow, pressure, concentration, payload in rows:
-        rec: Dict[str, Any] = {"time": to_iso_from_ts(ts), "ts": ts, "quality": quality,
-                               "temperature": temperature, "flow": flow, "pressure": pressure,
-                               "concentration": concentration}
-        results.append(rec)
-    return results
+    return _rows_to_dicts(rows)
 
-# ---------- 分页查询 ----------
+
 def query_by_time_range_with_pagination(
     data_type: str,
     start_ts: int,
@@ -202,8 +304,7 @@ def query_by_time_range_with_pagination(
     size: int
 ) -> List[Dict[str, Any]]:
     """
-    分页查询。page 从 1 开始，size 每页数量（限制 1..1000）。
-    返回当前页的记录列表（同 query_by_time_range 的记录结构）。
+    分页查询 (LIMIT ... OFFSET ...)
     """
     if page is None or page < 1:
         page = 1
@@ -219,10 +320,14 @@ def query_by_time_range_with_pagination(
         data_type = "default"
 
     conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
     try:
         cur = conn.cursor()
         cur.execute("""
-            SELECT ts, quality, temperature, flow, pressure, concentration, payload
+            SELECT ts, quality_info,
+                   tic1201b, tic1345, ti1306, ti1329, ti1352a,
+                   fic1303, fic1309, fi1314,
+                   pic1302
             FROM opc_data
             WHERE data_type = ?
               AND ts >= ?
@@ -237,55 +342,4 @@ def query_by_time_range_with_pagination(
     finally:
         conn.close()
 
-    results: List[Dict[str, Any]] = []
-    for ts, quality, temperature, flow, pressure, concentration, payload in rows:
-        rec: Dict[str, Any] = {"time": to_iso_from_ts(ts), "ts": ts, "quality": quality,
-                               "temperature": temperature, "flow": flow, "pressure": pressure,
-                               "concentration": concentration}
-        results.append(rec)
-
-    return results
-
-# ---------- 可选工具：按页/按天获取最近 N 条（便于趋势展示） ----------
-def get_recent_n(data_type: str, n: int = 300) -> List[Dict[str, Any]]:
-    """
-    取最近 n 条（最新在后），适合画趋势图（会按 ts 升序返回）
-    """
-    if data_type is None:
-        data_type = "default"
-    conn = sqlite3.connect(DB_PATH)
-    try:
-        cur = conn.cursor()
-        cur.execute("""
-            SELECT ts, quality, temperature, flow, pressure, concentration, payload
-            FROM opc_data
-            WHERE data_type = ?
-            ORDER BY ts DESC
-            LIMIT ?
-        """, (data_type, n))
-        rows = cur.fetchall()
-    except Exception:
-        logger.exception("get_recent_n 执行失败")
-        rows = []
-    finally:
-        conn.close()
-
-    # rows 是降序，转换并逆序返回升序
-    tmp: List[Dict[str, Any]] = []
-    for ts, quality, temperature, flow, pressure, concentration, payload in rows:
-        rec = {
-            "time": to_iso_from_ts(ts),
-            "ts": ts,
-            "quality": quality,
-            "temperature": temperature,
-            "flow": flow,
-            "pressure": pressure,
-            "concentration": concentration
-        }
-        try:
-            rec["payload"] = json.loads(payload) if payload else None
-        except Exception:
-            rec["payload"] = payload
-        tmp.append(rec)
-    tmp.reverse()
-    return tmp
+    return _rows_to_dicts(rows)

@@ -74,7 +74,6 @@ class DataViewService:
                 logger.exception("[opc数据预览 - SQLite] 查询失败: %s", e)
                 return ResultEntityMethod.buildFailedResult(message="数据库查询失败")
 
-            logger.info("[opc数据预览] - 预览获取成功 (返回 %d 条)", len(preview_records))
 
             # ----------------------------------------------------------------------
             # 4) 查询全部数据用于 CSV 导出
@@ -91,20 +90,40 @@ class DataViewService:
             export_dir = os.path.join(os.getcwd(), "export")
             os.makedirs(export_dir, exist_ok=True)
 
-            file_name = f"{data_type}_{datetime.now().strftime('%Y%m%d_%H:%M:%S')}.csv"
+            file_name = f"{data_type}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
             file_path = os.path.join(export_dir, file_name)
 
             try:
-                with open(file_path, "w", encoding="utf-8", newline="") as f:
+                with open(file_path, "w", encoding="utf-8-sig", newline="") as f:
                     writer = csv.writer(f)
 
                     # 写表头（根据第一条记录来生成）
                     if full_records:
-                        writer.writerow(full_records[0].keys())
+                        # 【关键修改】定义你想要的表头顺序
+                        # 你可以随意调整这个列表里的顺序，或者删除不想导出的列
+                        custom_headers = [
+                            "id",
+                            "time",
+                            "dataType",
+                            # --- 数值列 ---
+                            "tic1201b", "tic1345",
+                            "ti1306", "ti1329", "ti1352a",
+                            "fic1303", "fic1309", "fi1314",
+                            "pic1302",
+                            # --- 放在最后的列 ---
+                            "qualities"
+                        ]
 
-                    # 写数据
-                    for row in full_records:
-                        writer.writerow(row.values())
+                        # 初始化 DictWriter
+                        # extrasaction='ignore': 如果数据里有某些字段(如 extra_field)不在 headers 里，忽略它，不报错
+                        writer = csv.DictWriter(f, fieldnames=custom_headers, extrasaction='ignore')
+
+                        # 写入表头
+                        writer.writeheader()
+
+                        # 写入数据
+                        if full_records:
+                            writer.writerows(full_records)
 
             except Exception as e:
                 logger.exception("[opc数据预览 - CSV导出错误] %s", e)
@@ -274,15 +293,15 @@ class DataViewService:
     @staticmethod
     def save(data_view: 'DataView') -> bool:
         try:
-            record = data_view.to_dict()
-            data_type = data_view.dataType
-            if not data_type:
-                data_type = "default"  # 可按需改默认
+            # record = data_view.to_dict()
+            # data_type = data_view.dataType
+            # if not data_type:
+            #     data_type = "default"  # 可按需改默认
 
             # 3. 追加写入当日文件
-            insert_one_record(data_type, record)
+            insert_one_record(data_view)
 
-            logger.info("[opc数据存储] - 本地写入成功: %s", record.get("id"))
+            logger.info("[opc数据存储] - 本地写入成功: %s", data_view.id)
             return True
 
         # 由于 Manager 传入的已经是 DataView 实例，理论上不会有 ValidationError

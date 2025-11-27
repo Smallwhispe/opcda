@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Optional, Any, Dict
+from typing import Optional, Any, Dict, List, Union
 from uuid import uuid4
 import re
 import pytz
@@ -9,143 +9,179 @@ LOCAL_TZ = pytz.timezone("Asia/Shanghai")
 
 
 def now_jst() -> datetime:
-    # 生成带时区的当前时间（pytz 的推荐写法）
     return LOCAL_TZ.localize(datetime.now())
 
 
+# ==========================================
+# 1. 更新 DataView 模型
+# ==========================================
 class DataView(BaseModel):
     id: str = Field(default_factory=lambda: uuid4().hex)
     dataType: Optional[str] = None
-    temperature: Optional[str] = None
-    flow: Optional[str] = None
-    pressure: Optional[str] = None
-    concentration: Optional[str] = None
-    quality: Optional[bool] = False
-    # 确保 time 字段存储的是带时区的 datetime 对象
+
+    # 存储每个 Tag 的具体质量 (Key: 完整Tag名, Value: Good/Bad)
+    qualities: Dict[str, str] = Field(default_factory=dict)
+
+    # --- 9 个具体 DCS 点位的数值字段 ---
+    tic1201b: Optional[Any] = None
+    tic1345: Optional[Any] = None
+    ti1306: Optional[Any] = None
+    ti1329: Optional[Any] = None
+    ti1352a: Optional[Any] = None
+
+    fic1303: Optional[Any] = None
+    fic1309: Optional[Any] = None
+    fi1314: Optional[Any] = None
+
+    pic1302: Optional[Any] = None
+
+    # 时间字段
     time: datetime = Field(default_factory=now_jst)
 
-    def __repr__(self):
-        return (f"DataView(id='{self.id}', "
-                f"dataType='{self.dataType}', "
-                f"temperature='{self.temperature}', "
-                f"flow='{self.flow}', "
-                f"pressure={self.pressure}, "
-                f"concentration={self.concentration}, "
-                f"quality={self.quality}, "
-                f"time={self.time}, )")
-
     def to_dict(self):
-
-        # -----------------------------------------------------------------
-        # !!! 核心修复代码：在转换字符串前，将时间对象转换为 LOCAL_TZ (Asia/Shanghai) 时区 !!!
-        # -----------------------------------------------------------------
-        # 1. 确保时间字段有 tzinfo，并转换到本地时区 (CST)
+        """
+        转换为前端和数据库都需要的嵌套字典格式：
+        {
+            "id": "...",
+            "time": "...",
+            "TIC1201B.PIDA.PV": { "value": 123.4, "quality": "Good" },
+            ...
+        }
+        """
+        # 1. 时区处理
         if self.time.tzinfo is None:
-            # 如果是无时区时间，先假设它是本地时间并加上时区信息
             local_time = LOCAL_TZ.localize(self.time)
         else:
-            # 如果是带时区时间 (如 UTC)，则将其转换为本地时区
             local_time = self.time.astimezone(LOCAL_TZ)
 
-        # 2. 使用本地时区的对象进行格式化
         time_str = local_time.strftime("%Y-%m-%d %H:%M:%S")
         time_str_final = f"{time_str}+08:00"
+
+        # 2. 辅助组装函数
+        def make_item(field_val, tag_name):
+            # 获取质量，默认为 Bad
+            qual = self.qualities.get(tag_name, 'Bad')
+
+            # 如果有数值但没记录质量（防御性逻辑），默认视为 Good
+            if field_val is not None and tag_name not in self.qualities:
+                qual = 'Good'
+
+            return {
+                'value': field_val,
+                'quality': qual
+            }
+
+        # 3. 返回结构化数据
         return {
             'id': self.id,
             'dataType': self.dataType,
-            'temperature': self.temperature,
-            'flow': self.flow,
-            'pressure': self.pressure,
-            'concentration': self.concentration,
-            'quality': self.quality,
-            'time': time_str_final  # 使用本地时区格式化的字符串
+            'time': time_str_final,
+
+            # --- 映射回完整 Tag Name ---
+            'TIC1201B.PIDA.PV': make_item(self.tic1201b, 'TIC1201B.PIDA.PV'),
+            'TIC1345.PIDA.PV': make_item(self.tic1345, 'TIC1345.PIDA.PV'),
+            'TI1306.DACA.PV': make_item(self.ti1306, 'TI1306.DACA.PV'),
+            'TI1329.DACA.PV': make_item(self.ti1329, 'TI1329.DACA.PV'),
+            'TI1352A.DACA.PV': make_item(self.ti1352a, 'TI1352A.DACA.PV'),
+
+            'FIC1303.PIDA.PV': make_item(self.fic1303, 'FIC1303.PIDA.PV'),
+            'FIC1309.PIDA.PV': make_item(self.fic1309, 'FIC1309.PIDA.PV'),
+            'FI1314.DACA.PV': make_item(self.fi1314, 'FI1314.DACA.PV'),
+
+            'PIC1302.PIDA.PV': make_item(self.pic1302, 'PIC1302.PIDA.PV'),
         }
 
 
-# --- 其他辅助函数和转换函数保持不变 ---
-
-# 建立一个关键词到DataView字段的映射
+# ==========================================
+# 2. 映射配置
+# Key: Tag 中的关键特征串, Value: DataView 属性名
+# ==========================================
 OPC_FIELD_MAP = {
-    'Real8': 'temperature',  # 假设 Real8 映射到 temperature
-    'Real4': 'flow',  # 假设 Real4 映射到 flow
-    'Int4': 'pressure',  # 假设 Int4 映射到 pressure
-    'String': 'concentration'  # 假设 String 映射到 concentration
+    'TIC1201B': 'tic1201b',
+    'TIC1345': 'tic1345',
+    'TI1306': 'ti1306',
+    'TI1329': 'ti1329',
+    'TI1352A': 'ti1352a',
+    'FIC1303': 'fic1303',
+    'FIC1309': 'fic1309',
+    'FI1314': 'fi1314',
+    'PIC1302': 'pic1302'
 }
 
 
-# clean_opc_string 函数保持不变...
-def clean_opc_string(tag_name: str, raw_value: Any) -> Optional[str]:
-    """
-    根据数据类型清理和格式化值，全部转为字符串。
-    专门用于处理浓度字符串，去除单位。
-    """
-    if raw_value is None:
+def clean_opc_value(val: Any) -> Any:
+    """清理数值，尝试转为 float，如果带单位则提取数字"""
+    if val is None:
         return None
+    try:
+        # 直接尝试转换
+        return float(val)
+    except (ValueError, TypeError):
+        # 处理字符串 "123.45 kg/h"
+        s_val = str(val).strip()
+        match = re.search(r"^(-?\d+(\.\d+)?)", s_val)
+        if match:
+            return float(match.group(1))
+    return val
 
-    # 针对 String 类型（浓度）的特殊处理：提取数字部分
-    if 'String' in tag_name:
-        # 正则表达式匹配开头处的数字、小数点或逗号，去除单位 (如 '0.4980 wt%')
-        match = re.search(r"^\s*([\d\.\,]+)", str(raw_value).strip())
-        return match.group(1) if match else str(raw_value).strip()
 
-    # 对于数字和布尔值，直接转换为字符串
-    return str(raw_value)
-
-
-# parse_opc_data_to_data_view 函数保持不变...
-def parse_opc_data_to_data_view(opc_raw_data: Dict[str, Dict[str, Any]], data_type_tag: str = "default") -> DataView:
+# ==========================================
+# 3. 解析逻辑 (适配 List 输入)
+# ==========================================
+def parse_opc_data_to_data_view(opc_raw_data: Union[List[tuple], Dict], data_type_tag: str = "default") -> DataView:
     """
-    将OPC原始数据（嵌套字典）转换为DataView实例。
-    (已修复错误的时区标签)
+    将OPC原始数据转换为DataView实例。
+    支持输入格式：
+    [('Tag', Val, Qual, Time), ...]
     """
 
-    payload: Dict[str, Any] = {
+    model_data: Dict[str, Any] = {
         'dataType': data_type_tag,
-        'quality': True
+        'qualities': {}
     }
     first_timestamp = None
 
-    for tag_name, tag_data in opc_raw_data.items():
+    # --- 1. 统一转为可遍历的 (tag, val, qual, time) 列表 ---
+    items_to_process = []
 
-        value = tag_data.get('value')
-        quality_str = tag_data.get('quality', 'Bad')
-        timestamp_str = tag_data.get('timestamp')
+    if isinstance(opc_raw_data, list):
+        # 适配你提供的: [('TIC...', 1.2, 'Good', 'Time'), ...]
+        items_to_process = opc_raw_data
+    elif isinstance(opc_raw_data, dict):
+        # 兼容旧格式字典
+        for k, v in opc_raw_data.items():
+            items_to_process.append((k, v.get('value'), v.get('quality'), v.get('timestamp')))
 
-        # 提取时间戳（取第一个有效的时间戳作为记录时间）
-        if timestamp_str and not first_timestamp:
+    # --- 2. 遍历处理数据 ---
+    for item in items_to_process:
+        if len(item) < 4: continue
 
-            # ----------------------------------------------------
-            # !!! 时区修正逻辑开始 !!!
-            # ----------------------------------------------------
+        tag_name, raw_val, raw_qual, ts_str = item[:4]
 
-            # 1. 查找时区偏移量的分隔符 (+ 或 -)
-            # (从第11个字符开始查找，以避免误判日期中的 -)
-            tz_split = -1
-            if '+' in timestamp_str[10:]:
-                tz_split = timestamp_str.rfind('+')
-            elif '-' in timestamp_str[10:]:
-                tz_split = timestamp_str.rfind('-')
-
-            # 2. 剥离错误的时区标签，只获取时间部分
-            time_part = timestamp_str
-            if tz_split != -1:
-                time_part = timestamp_str[:tz_split]  # 获取 '2025-11-10 16:47:01.476000'
-
-            # 3. 将字符串解析为“纯净 (naive)”的 datetime 对象
-            #    (必须处理 .%f 微秒，同时兼容 Python 3.6 的 strptime)
-            dt_naive = None
+        # A. 解析时间 (只取第一个非空的)
+        if ts_str and not first_timestamp:
             try:
-                dt_naive = datetime.strptime(time_part, "%Y-%m-%d %H:%M:%S.%f")
-            except ValueError:
-                # 如果没有微秒，则回退到不带微秒的格式
-                dt_naive = datetime.strptime(time_part, "%Y-%m-%d %H:%M:%S")
+                # 处理可能带有的 +00:00 时区后缀
+                clean_ts_str = str(ts_str)
+                if '+' in clean_ts_str:
+                    clean_ts_str = clean_ts_str.split('+')[0]
+                elif clean_ts_str.count('-') > 2:  # 处理 2025-11-27... 中的负号
+                    last_dash = clean_ts_str.rfind('-')
+                    if last_dash > 10:  # 确保不是日期的横杠
+                        clean_ts_str = clean_ts_str[:last_dash]
 
-            # 4. 强制将这个“纯净”时间标记为 LOCAL_TZ (Asia/Shanghai)
-            first_timestamp = LOCAL_TZ.localize(dt_naive)
+                dt_naive = datetime.strptime(clean_ts_str.strip(), "%Y-%m-%d %H:%M:%S.%f")
+                first_timestamp = LOCAL_TZ.localize(dt_naive)
+            except (ValueError, TypeError):
+                # 如果解析失败，暂不处理，后面兜底
+                pass
 
-        if quality_str != 'Good':
-            payload['quality'] = False
+        # B. 记录质量
+        # 统一转为 'Good' 或 'Bad'
+        is_good = str(raw_qual).upper() in ['GOOD', 'TRUE', '1']
+        model_data['qualities'][tag_name] = 'Good' if is_good else 'Bad'
 
+        # C. 映射数值到 DataView 字段
         mapped_field = None
         for key, field in OPC_FIELD_MAP.items():
             if key in tag_name:
@@ -153,13 +189,12 @@ def parse_opc_data_to_data_view(opc_raw_data: Dict[str, Dict[str, Any]], data_ty
                 break
 
         if mapped_field:
-            payload[mapped_field] = clean_opc_string(tag_name, value)
+            model_data[mapped_field] = clean_opc_value(raw_val)
 
-    # 赋值时间戳
+    # --- 3. 兜底时间 ---
     if first_timestamp:
-        payload['time'] = first_timestamp
+        model_data['time'] = first_timestamp
     else:
-        # 如果 OPC 数据没有时间戳，使用 now_jst() 作为备用
-        payload['time'] = now_jst()
+        model_data['time'] = now_jst()
 
-    return DataView(**payload)
+    return DataView(**model_data)

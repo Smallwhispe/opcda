@@ -1,11 +1,12 @@
 import OpenOPC
 import sys
 import atexit  # 用于在程序退出时自动关闭连接
-
+import os  # 新增
+from dotenv import load_dotenv  # 新增
+load_dotenv()
 # --- 配置 ---
-OPC_SERVER_NAME = 'Matrikon.OPC.Simulation.1'
-# 必须：填入您的 OpenOPCService.py 所在虚拟机的 IP 地址
-GATEWAY_HOST = '192.168.133.128'
+OPC_SERVER_NAME = os.getenv('OPC_SERVER_NAME', 'Matrikon.OPC.Simulation.1')
+GATEWAY_HOST = os.getenv('GATEWAY_HOST', '192.168.133.128')
 opc_client = None
 
 

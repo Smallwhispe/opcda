@@ -1,4 +1,5 @@
 import logging
+import os
 import time
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
@@ -8,7 +9,8 @@ from opc_connector import opc_client
 from services.DataViewService import DataViewService
 from config.Config import Config
 from vo.ResultEntity import ErrorCode
-
+from dotenv import load_dotenv  # 新增
+load_dotenv()
 
 class Manager:
     def __init__(self):
@@ -64,60 +66,47 @@ class Manager:
 
     def catch_data_from_opc_client(self, opc_client: Any) -> Optional['DataView']:
         """
-        从 OPC 服务器读取数据，将其转换为 DataView 模型，并返回。
-
-        Args:
-            opc_client: 已经连接好的 OpenOPC 客户端对象。
-
-        Returns:
-            Optional[DataView]: 成功时返回 DataView 实例，失败时返回 None。
+        从 OPC 服务器读取数据 (点位由 .env 配置)，
+        直接将原始列表数据传给 DataView 解析器。
         """
-        """
-        从 OPC 服务器读取数据并以 JSON 格式返回。
-        """
-        tag_temp = 'Bucket Brigade.Real8'
-        tag_press = 'Bucket Brigade.Real4'
-        tag_flow = 'Bucket Brigade.Int4'
-        tag_conc = 'Bucket Brigade.String'
-        tag_quality = 'Bucket Brigade.Bool'
 
-        tag_list_to_read = [
-            tag_temp, tag_press, tag_flow, tag_conc, tag_quality
-        ]
-        # 确保客户端已连接
+        # --- 1. 从环境变量获取配置的点位 ---
+        tags_env_str = os.getenv('OPC_TAGS', '')
+
+        if tags_env_str:
+            tag_list_to_read = [tag.strip() for tag in tags_env_str.split(',') if tag.strip()]
+        else:
+            self.logger.error("[opc数据刷新] - .env 文件中未配置 OPC_TAGS")
+            return None
+
+        # --- 2. 检查客户端状态 ---
         if opc_client is None:
-            self.logger.error("[opc数据刷新] - OPC 客户端未初始化或连接")
+            self.logger.error("[opc数据刷新] - OPC 客户端未初始化")
             return None
 
         try:
-            # 1. 从 OPC 服务器读取数据 (使用 dataGet 的逻辑)
-            # 假设 opc_client.read 返回一个元组列表: [(tag_name, value, quality, timestamp), ...]
-            read_data: List[tuple] = opc_client.read(tag_list_to_read)
+            # --- 3. 读取数据 (List[tuple]) ---
+            # 返回格式示例: [('TIC1201B...', 12.5, 'Good', '2025-11-27...'), ...]
+            read_data = opc_client.read(tag_list_to_read)
 
-            # 2. 转换为原始字典格式 (将列表转为键值对字典，便于解析函数处理)
-            opc_raw_data: Dict[str, Dict[str, Any]] = {}
-            for tag_name, value, quality, timestamp in read_data:
-                opc_raw_data[tag_name] = {
-                    "value": value,
-                    "quality": quality,
-                    "timestamp": timestamp
-                }
+            if not read_data:
+                self.logger.warning("[opc数据刷新] - 未读取到任何数据")
+                return None
 
-            self.logger.info("OPC数据读取成功，开始转换。原始数据: %s", opc_raw_data)
+            self.logger.info(f"OPC数据读取成功，共获取 {len(read_data)} 条记录")
 
-            # 3. 调用之前编写的转换函数，生成 DataView 实例
-            # 假设 data_type_tag 为 "opc_data"
+            # --- 4. 直接转换 ---
+            # 移除了中间的字典转换循环，直接把 read_data 列表扔给解析器
+            # 解析器内部会自动识别 List 类型并处理
             data_view: 'DataView' = parse_opc_data_to_data_view(
-                opc_raw_data,
-                data_type_tag="opc_data"  # 可根据业务需求设定或从配置中读取
+                read_data,
+                data_type_tag="采样数据"
             )
 
-            # 4. 成功返回 DataView 实例
             return data_view
 
         except Exception as e:
-            # 如果 OPC 服务死掉、连接断开或数据转换失败，会在这里捕获到异常
-            self.logger.error(f"[opc数据刷新] - OPC数据获取或转换异常: {e}", exc_info=True)
+            self.logger.error(f"[opc数据刷新] - 异常: {e}", exc_info=True)
             return None
 
     def save_to_database(self, key: datetime, data_view: DataView) -> Optional[bool]:

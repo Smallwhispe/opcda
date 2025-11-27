@@ -47,7 +47,8 @@ class DataCollectService:
             end_ts   = dt_to_ts(end_dt)
 
             records = query_by_time_range(data_type, start_ts, end_ts)
-
+            logger.info("[data_collect] - 查询结果数量: %d", len(records))
+            logger.info("[data_collect] - 结果样例: %s", records[:2] if len(records) >=2 else records)
             return ResultEntityMethod.buildSuccessResult(data={
                 "dataList": records,
                 "total": len(records)
