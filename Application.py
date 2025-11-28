@@ -6,7 +6,6 @@ import threading
 from flask import Flask
 from flask_cors import CORS
 from routes.DataBlueprint import dataViewBp
-from services import repository_sqlite
 from services.Manager import Manager
 from services.predict_result import init_predict_db
 from services.repository_sqlite import init_opc_db
@@ -57,7 +56,8 @@ if __name__ == '__main__':
     manager_thread.start()
     logging.info("Manager服务线程已启动")
     print("正在初始化数据库...")
-    repository_sqlite.init_db()
+    init_opc_db()
+    init_predict_db()
     try:
         # 启动Flask应用（主线程）
         logging.info("启动Flask应用...")

@@ -5,11 +5,9 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from typing import Optional, Any, List, Dict
 from models.DataView import DataView, parse_opc_data_to_data_view
-from models.PredictResult import PredictResult
 from opc_connector import opc_client
 from services.DataViewService import DataViewService
 from config.Config import Config
-from services.predict_result import insert_predict_record
 from vo.ResultEntity import ErrorCode
 from dotenv import load_dotenv  # 新增
 load_dotenv()
@@ -77,7 +75,7 @@ class Manager:
         if tags_env_str:
             tag_list_to_read = [tag.strip() for tag in tags_env_str.split(',') if tag.strip()]
         else:
-            self.logger.error("[opc数据刷新] - .env 文件中未配置 OPC_TAGS")
+            logger.error("[opc数据刷新] - .env 文件中未配置 OPC_TAGS")
             return None
 
         # --- 2. 检查客户端状态 ---
@@ -91,7 +89,7 @@ class Manager:
             read_data = opc_client.read(tag_list_to_read)
 
             if not read_data:
-                self.logger.warning("[opc数据刷新] - 未读取到任何数据")
+                logger.warning("[opc数据刷新] - 未读取到任何数据")
                 return None
 
             logger.info("OPC数据读取成功，开始转换。原始数据: %s", opc_raw_data)
