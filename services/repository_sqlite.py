@@ -2,7 +2,7 @@ import os
 import json
 import sqlite3
 import logging
-from typing import Any, List, Dict, Union
+from typing import Any, List, Dict, Union, Optional
 from zoneinfo import ZoneInfo
 from dotenv import load_dotenv
 
@@ -43,6 +43,48 @@ DB_FILENAME = "history.db"
 DB_PATH = os.path.join(DATA_DIR, DB_FILENAME)
 
 
+# ---------- 辅助函数（将 full tag 转为 SQL 列名） ----------
+def convert_to_col(full_tag_name: str) -> Optional[str]:
+    """
+    将 OPC 全名（例如 'TIC1201B.PIDA.PV'）转换为 SQL 列名（'TIC1201B_PIDA_PV'）
+    保持大小写，不做小写化。
+    """
+    if full_tag_name is None:
+        return None
+    return full_tag_name.replace('.', '_')
+
+def convert_to_arg(tag: str) -> str:
+    """
+    将 'TIC1201B.PIDA.PV' 转换为 'ARG2_TIC1201B_PV'
+    """
+    parts = tag.split(".")
+    middle = parts[0]
+    return f"ARG2_{middle}_PV"
+
+def col_to_arg(tag: str) -> str:
+    """
+    将 TIC1201B_PIDA_PV 或 TIC1201B_DACA_PV 转为 ARG2_TIC1201B_PV
+    """
+    middle = tag.split("_")[0]
+    return f"ARG2_{middle}_PV"
+
+def arg_to_col(tag: str) -> str:
+    """
+    将 ARG2_TIC1201B_PV 转换为 TIC1201B_PIDA_PV / TIC1201B_DACA_PV
+    按规则：带 C → PIDA，不带 C → DACA
+    """
+    middle = tag.replace("ARG2_", "").replace("_PV", "")
+    if "C" in middle:
+        mode = "PIDA"
+    else:
+        mode = "DACA"
+    return f"{middle}_{mode}_PV"
+# 预构造数据列名列表（基于 GLOBAL_TAG_MAP），便于复用在 SELECT/INSERT 中
+DATA_COLUMN_FULLS = [full for (_attr, full) in GLOBAL_TAG_MAP]
+DATA_COLUMN_SQL_NAMES = [convert_to_col(full) for full in DATA_COLUMN_FULLS]
+# 逗号分隔字符串（若为空则为空字符串）
+DATA_COLUMNS_COMMA = ", ".join(DATA_COLUMN_SQL_NAMES) if DATA_COLUMN_SQL_NAMES else ""
+
 # =========================
 # 1. 初始化 (建表)
 # =========================
@@ -61,23 +103,51 @@ def init_opc_db():
             data_type     TEXT DEFAULT 'default',
             ts            INTEGER NOT NULL,
 
-            -- 数值列
-            tic1201b      REAL,
-            tic1345       REAL,
-            ti1306        REAL,
-            ti1329        REAL,
-            ti1352a       REAL,
-            fic1303       REAL,
-            fic1309       REAL,
-            fi1314        REAL,
-            pic1302       REAL,
+                        -- 数值列
+                        TI1352A_DACA_PV  REAL,
+                        TI1329_DACA_PV   REAL,
+                        TI1328_DACA_PV   REAL,
+                        PIC1306_PIDA_PV  REAL,
+                        TI1338_DACA_PV   REAL,
+                        FIC1308_PIDA_PV  REAL,
+                        FIC1309_PIDA_PV  REAL,
+                        FIC1310_PIDA_PV  REAL,
+                        FIC1303_PIDA_PV  REAL,
+                        FIC1311_PIDA_PV  REAL,
+                        TI1330_DACA_PV   REAL,
+                        TIC1201B_PIDA_PV REAL,
+                        PI1204_DACA_PV   REAL,
+                        FIC1214_PIDA_PV  REAL,
+                        FI1160_DACA_PV   REAL,
+                        FIC1210_PIDA_PV  REAL,
+                        FIC1203_PIDA_PV  REAL,
+                        FI1405_DACA_PV   REAL,
+                        FI1314_DACA_PV   REAL,
+                        FI1312_DACA_PV   REAL,
+                        PI1308_DACA_PV   REAL,
+                        TI1304_DACA_PV   REAL,
+                        TIC1345_PIDA_PV  REAL,
+                        FIC1307_PIDA_PV  REAL,
+                        FIC1306_PIDA_PV  REAL,
+                        FIC1305_PIDA_PV REAL,
+                        FIC1304_PIDA_PV REAL,
+                        PI1304_DACA_PV  REAL,
+                        TI1308_DACA_PV  REAL,
+                        TI1310_DACA_PV  REAL,
+                        TI1312_DACA_PV  REAL,
+                        TI1314_DACA_PV  REAL,
+                        TI1341_DACA_PV  REAL,
+                        TI1347_DACA_PV  REAL,
+                        TIC1101_PIDA_PV REAL,
+                        TIC1103_PIDA_PV REAL,
+                        TI1233C_PIDA_PV REAL,
+                        TI1306_DACA_PV  REAL,
 
-            quality_info  TEXT,
+                        quality_info    TEXT,
 
-            -- 联合唯一索引依然保留，防止同一时间点重复写入
-            UNIQUE(data_type, ts)
-        );
-        """)
+                        UNIQUE (data_type, ts)
+                    );
+                    """)
 
         # 索引
         cur.execute("""
@@ -97,13 +167,14 @@ def insert_one_record(data_view: DataView) -> None:
     """
     插入一条记录。
     已修改：直接使用 DataView.id (UUID) 作为主键插入，不使用自增 ID。
+    关键修改：INSERT 的列名与参数根据 GLOBAL_TAG_MAP 动态构造，避免硬编码旧列名。
     """
     # 1. 获取基础信息
     data_type = data_view.dataType if data_view.dataType else "default"
-    dt = parse_dt_maybe(data.get("time"))
+    dt = parse_dt_maybe(data_view.get("time"))
     dt = standardize_dt(dt)
     if dt is None:
-        logger.debug("insert_one_record: 时间解析失败，忽略该记录: %s", data)
+        logger.debug("insert_one_record: 时间解析失败，忽略该记录: %s", data_view)
         return False
     ts = dt_to_ts(dt)
 
@@ -138,34 +209,29 @@ def insert_one_record(data_view: DataView) -> None:
     try:
         cur = conn.cursor()
 
-        # --- 修改点：SQL 语句增加 id 列 ---
-        sql = """
+        # 构造数据列名列表（SQL 列名，如 "TIC1201B_PIDA_PV"）
+        sql_col_names = [convert_to_col(full_tag) for (_attr, full_tag) in tag_map]
+        # 组合成 "col1, col2, col3" 字符串
+        cols_part = ", ".join(sql_col_names)
+        # 占位符参数个数（?）
+        placeholders = ", ".join(["?"] * len(sql_col_names))
+
+        # 完整 SQL：id, data_type, ts, <cols_part>, quality_info
+        sql = f"""
             INSERT OR IGNORE INTO opc_data (
-                id, 
-                data_type, ts,
-                tic1201b, tic1345, ti1306, ti1329, ti1352a,
-                fic1303, fic1309, fi1314,
-                pic1302,
+                id,
+                data_type,
+                ts,
+                {cols_part},
                 quality_info
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, {placeholders}, ?)
         """
 
-        # --- 修改点：参数元组增加 record_id，并使用 .get() 防止 KeyError ---
-        cur.execute(sql, (
-            record_id,  # 插入 UUID
-            data_type,
-            ts,
-            values_to_insert.get('tic1201b'),
-            values_to_insert.get('tic1345'),
-            values_to_insert.get('ti1306'),
-            values_to_insert.get('ti1329'),
-            values_to_insert.get('ti1352a'),
-            values_to_insert.get('fic1303'),
-            values_to_insert.get('fic1309'),
-            values_to_insert.get('fi1314'),
-            values_to_insert.get('pic1302'),
-            quality_json
-        ))
+        # 构建参数列表：record_id, data_type, ts, <values in same order as sql_col_names>, quality_json
+        values_list = [values_to_insert.get(attr) for (attr, _full) in tag_map]
+        params = [record_id, data_type, ts] + values_list + [quality_json]
+
+        cur.execute(sql, params)
         conn.commit()
     except Exception as e:
         logger.exception(f"insert_one_record error: {e}")
@@ -188,8 +254,12 @@ def _rows_to_dicts(rows: list) -> list:
     results = []
 
     for row in rows:
-        # 1. 转为字典
-        item = dict(row)
+        # 1. 转为字典（sqlite3.Row 支持 dict(row)）
+        try:
+            item = dict(row)
+        except Exception:
+            # 如果 row 是 tuple，则无法直接转 dict，此时跳过（但按你的原逻辑应使用 Row）
+            continue
 
         # 2. [ID] 处理
         if item.get('id'):
@@ -241,12 +311,15 @@ def get_recent_n(data_type: str, n: int = 300) -> List[Dict[str, Any]]:
     conn.row_factory = sqlite3.Row
     try:
         cur = conn.cursor()
-        # 记得查询 quality_info
+        # 如果没有任何配置的列，则只选基础列
+        select_cols = DATA_COLUMNS_COMMA
+        if select_cols:
+            select_clause = f"ts, quality_info, {select_cols}"
+        else:
+            select_clause = "ts, quality_info"
+
         cur.execute(f"""
-            SELECT data_type, ts,quality_info,
-                   tic1201b, tic1345, ti1306, ti1329, ti1352a,
-                   fic1303, fic1309, fi1314,
-                   pic1302
+            SELECT {select_clause}
             FROM opc_data
             WHERE data_type = ?
             ORDER BY ts DESC
@@ -254,6 +327,7 @@ def get_recent_n(data_type: str, n: int = 300) -> List[Dict[str, Any]]:
         """, (data_type, n))
         rows = cur.fetchall()
     except Exception:
+        logger.exception("get_recent_n 执行失败")
         rows = []
     finally:
         conn.close()
@@ -273,15 +347,15 @@ def query_by_time_range(data_type: str, start_ts: int, end_ts: int) -> List[Dict
     conn.row_factory = sqlite3.Row  # 必须开启，以便通过列名访问
     try:
         cur = conn.cursor()
-        # 显式查询所有数值列 + quality_info
-        cur.execute("""
-            SELECT id, 
-                   data_type, 
-                   ts,
-                   quality_info,
-                   tic1201b, tic1345, ti1306, ti1329, ti1352a,
-                   fic1303, fic1309, fi1314,
-                   pic1302
+        # 构造 SELECT 列
+        select_cols = DATA_COLUMNS_COMMA
+        if select_cols:
+            select_clause = f"id, data_type, ts, quality_info, {select_cols}"
+        else:
+            select_clause = "id, data_type, ts, quality_info"
+
+        cur.execute(f"""
+            SELECT {select_clause}
             FROM opc_data
             WHERE data_type = ?
               AND ts >= ?
@@ -327,11 +401,15 @@ def query_by_time_range_with_pagination(
     conn.row_factory = sqlite3.Row
     try:
         cur = conn.cursor()
-        cur.execute("""
-            SELECT ts, quality_info,
-                   tic1201b, tic1345, ti1306, ti1329, ti1352a,
-                   fic1303, fic1309, fi1314,
-                   pic1302
+
+        select_cols = DATA_COLUMNS_COMMA
+        if select_cols:
+            select_clause = f"ts, quality_info, {select_cols}"
+        else:
+            select_clause = "ts, quality_info"
+
+        cur.execute(f"""
+            SELECT {select_clause}
             FROM opc_data
             WHERE data_type = ?
               AND ts >= ?
@@ -349,52 +427,6 @@ def query_by_time_range_with_pagination(
     return _rows_to_dicts(rows)
 
 # ---------- 可选工具：按页/按天获取最近 N 条（便于趋势展示） ----------
-def get_recent_n(data_type: str, n: int = 300) -> List[Dict[str, Any]]:
-    """
-    取最近 n 条（最新在后），适合画趋势图（会按 ts 升序返回）
-    """
-    if data_type is None:
-        data_type = "default"
-    conn = sqlite3.connect(DB_PATH)
-    try:
-        cur = conn.cursor()
-        cur.execute("""
-            SELECT ts, quality_info,
-                   tic1201b, tic1345, ti1306, ti1329, ti1352a,
-                   fic1303, fic1309, fi1314,
-                   pic1302
-            FROM opc_data
-            WHERE data_type = ?
-            ORDER BY ts DESC
-            LIMIT ?
-        """, (data_type, n))
-        rows = cur.fetchall()
-    except Exception:
-        logger.exception("get_recent_n 执行失败")
-        rows = []
-    finally:
-        conn.close()
-
-    # rows 是降序，转换并逆序返回升序
-    tmp: List[Dict[str, Any]] = []
-    for ts, quality, temperature, flow, pressure, concentration, payload in rows:
-        rec = {
-            "time": to_iso_from_ts(ts),
-            "ts": ts,
-            "quality": quality,
-            "temperature": temperature,
-            "flow": flow,
-            "pressure": pressure,
-            "concentration": concentration
-        }
-        try:
-            rec["payload"] = json.loads(payload) if payload else None
-        except Exception:
-            rec["payload"] = payload
-        tmp.append(rec)
-    tmp.reverse()
-    return tmp
-
 def get_every_four_pick_thirty() -> List[Dict[str, Any]]:
     """
     从最新数据中每 4 条取 1 条，最终取 30 条
