@@ -188,17 +188,6 @@ class DataViewService:
         except Exception:
             logger.exception("[opc数据预览] - 数据获取未知异常")
             return ResultEntityMethod.buildFailedResult(message="数据获取失败")
-    @staticmethod
-    def model_predict(request: ModelPredictReq, model_predict_service=None) -> ResultEntity:
-        try:
-            ##TODO这里应该是调用师姐的模型预测模块函数
-            result = model_predict_service.modelPredict(request)
-            # 将查询结果转换为字典列表
-            model_predict_res = {'time': result.time, 'produce': result.produce}
-            return ResultEntityMethod.buildSuccessResult(data=model_predict_res)
-        except Exception:
-            logger.exception("[opc数据导出] - opc数据导出未知异常")
-            return ResultEntityMethod.buildFailedResult(message="模型调用失败")
 
     @staticmethod
     def qr_query(request: QrQueryReq) -> ResultEntity:

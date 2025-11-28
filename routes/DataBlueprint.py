@@ -6,9 +6,10 @@ from pydantic import ValidationError
 
 from services.DataCollectService import DataCollectService
 from services.DataViewService import DataViewService
+from services.ModelService import ModelService
 from vo.QrExport import QrExportReq, QrExportRes
 from vo.ResultEntity import ResultEntityMethod, ErrorCode
-from vo.req import ModelPredictReq, DataCollectReq, DataExportReq, QrQueryReq
+from vo.req import DataCollectReq, DataExportReq, QrQueryReq
 from vo.res import ModelPredictRes, DataCollectRes, DataExportRes, QrQueryRes
 from opc_connector import opc_client  # <-- 导入我们共享的客户端
 dataViewBp = Blueprint('dataViewBp', __name__, url_prefix='/data')
@@ -244,25 +245,16 @@ def download_file():
 @dataViewBp.route('/modelPredict', methods=['POST'])
 def modelPredict():
     try:
-        if not request.args:
-            return jsonify(ResultEntityMethod.buildFailedResult(ErrorCode.NOT_REQUEST.get_code(), ErrorCode.NOT_REQUEST.get_msg(),None)), 400
-        data = request.get_json()
-        if not data:
-            return jsonify(ResultEntityMethod.buildFailedResult(ErrorCode.NO_PARAM.get_code(), ErrorCode.NO_PARAM.get_msg(), None)), 400
-        modelPredictReq = ModelPredictReq.model_validate(data)
-
         # 调用业务逻辑
-        result_data = DataViewService.modelPredict(modelPredictReq)
+        result_data = ModelService.model_predict_test()
 
         if result_data.success:
             # 构建响应
             response = ModelPredictRes(
-                version=result_data['version'],
-                startTime=result_data['startTime'],
-                endTime=result_data['endTime'],
-                produce=result_data['produce']
+                time=result_data.data.time,
+                result=result_data.data.result
             )
-            return jsonify(ResultEntityMethod.buildSuccessResult(ErrorCode.SUCCESS.get_code(), ErrorCode.SUCCESS.get_msg(),response)), 200
+            return jsonify(ResultEntityMethod.buildSuccessResult(ErrorCode.SUCCESS.get_code(), ErrorCode.SUCCESS.get_msg(),response.model_dump())), 200
         else:
             return jsonify(ResultEntityMethod.buildFailedResult(ErrorCode.SERVICE_FAILURE.get_code(), ErrorCode.SERVICE_FAILURE.get_msg(),None)), 500
     except ValidationError as e:

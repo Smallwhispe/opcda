@@ -24,7 +24,7 @@ DB_PATH = os.path.join(DATA_DIR, DB_FILENAME)
 # =========================
 # 初始化
 # =========================
-def init_db():
+def init_predict_db():
     os.makedirs(DATA_DIR, exist_ok=True)
     conn = sqlite3.connect(DB_PATH)
     try:

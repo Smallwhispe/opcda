@@ -23,7 +23,7 @@ DB_PATH = os.path.join(DATA_DIR, DB_FILENAME)
 # =========================
 # 初始化
 # =========================
-def init_db():
+def init_opc_db():
     os.makedirs(DATA_DIR, exist_ok=True)
     conn = sqlite3.connect(DB_PATH)
     try:
@@ -291,3 +291,21 @@ def get_recent_n(data_type: str, n: int = 300) -> List[Dict[str, Any]]:
         tmp.append(rec)
     tmp.reverse()
     return tmp
+
+def get_every_four_pick_thirty() -> List[Dict[str, Any]]:
+    """
+    从最新数据中每 4 条取 1 条，最终取 30 条
+    = 需要获取最近 120 条
+    """
+    needed_raw = 30 * 4  # 120 条
+    records = get_recent_n(data_type="采样数据", n=needed_raw)  # 你已有的函数
+
+    # 安全性判断：数据不够 120 条时自动补齐
+    if not records:
+        return []
+
+    # 每 4 条取 1 条
+    picked = records[::4]  # Python 切片步长 4
+
+    # 只取前 30 条即可
+    return picked[:30]

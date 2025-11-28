@@ -22,6 +22,10 @@ class Config:
     # 线程配置
     DATABASE_FREQUENCY = int(os.getenv('DATABASE_FREQUENCY'))  # 数据库保存频率（秒）
 
+    #模型配置
+    IP = os.getenv('IP', '127.0.0.1')
+    PORT = os.getenv('PORT', '8080')
+
     # 缓存配置
     CACHE_MAX_SIZE = int(os.getenv('CACHE_MAX_SIZE', 100))
     CACHE_TTL = int(os.getenv('CACHE_TTL', 3600))  # 缓存过期时间（秒）

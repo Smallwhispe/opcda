@@ -7,6 +7,9 @@ from flask import Flask
 from flask_cors import CORS
 from routes.DataBlueprint import dataViewBp
 from services.Manager import Manager
+from services.predict_result import init_predict_db
+from services.repository_sqlite import init_opc_db
+
 manager_stop_event = threading.Event()
 
 def create_app():
@@ -20,6 +23,8 @@ def create_app():
     CORS(app, origins=["http://localhost:5173", "http://127.0.0.1:5173"])
 
     app.register_blueprint(dataViewBp)
+    init_opc_db()
+    init_predict_db()
     return app
 
 def run_manager():
@@ -45,7 +50,7 @@ if __name__ == '__main__':
     )
     log = logging.getLogger('werkzeug')
     # 将 werkzeug 的日志级别设置为 WARNING，这样 INFO 级别的访问日志就不会显示了
-    log.setLevel(logging.WARNING)
+    # log.setLevel(logging.WARNING)
     # 在后台线程中启动Manager
     manager_thread = threading.Thread(target=run_manager, daemon=True)
     manager_thread.start()
