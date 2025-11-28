@@ -92,7 +92,7 @@ class Manager:
                 logger.warning("[opc数据刷新] - 未读取到任何数据")
                 return None
 
-            logger.info("OPC数据读取成功，开始转换。原始数据: %s", opc_raw_data)
+            logger.info(f"OPC数据读取成功，共获取 {len(read_data)} 条记录")
 
             # --- 4. 直接转换 ---
             # 移除了中间的字典转换循环，直接把 read_data 列表扔给解析器

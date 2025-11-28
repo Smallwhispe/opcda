@@ -12,63 +12,63 @@ from vo.QrExport import QrExportReq, QrExportRes
 from vo.ResultEntity import ResultEntityMethod, ErrorCode
 from vo.req import DataCollectReq, DataExportReq, QrQueryReq
 from vo.res import ModelPredictRes, DataCollectRes, DataExportRes, QrQueryRes
-from opc_connector import opc_client  # <-- 导入我们共享的客户端
+# from opc_connector import opc_client  # <-- 导入我们共享的客户端
 dataViewBp = Blueprint('dataViewBp', __name__, url_prefix='/data')
 
 
 load_dotenv()
 
 logger = logging.getLogger(__name__)
-@dataViewBp.route('/dataGet', methods=['GET'])
-def dataGet():
-    """
-    从 OPC 服务器读取数据并以 JSON 格式返回。
-    读取的点位列表由 .env 文件中的 OPC_TAGS 配置决定。
-    """
-
-    # 1. 从环境变量读取配置字符串
-    # 第二个参数是默认值，防止 .env 没配时报错
-    tags_env_str = os.getenv('OPC_TAGS', '')
-
-    # 2. 将字符串转换为列表
-    if tags_env_str:
-        # split(',') 按逗号分割
-        # strip() 去除每个点位名可能存在的首尾空格 (防止配置文件手误写了空格)
-        TAG_LIST_TO_READ = [tag.strip() for tag in tags_env_str.split(',') if tag.strip()]
-    else:
-        # 如果 .env 没配，给一个空列表或者默认的 Bucket Brigade 列表作为后备
-        TAG_LIST_TO_READ = []
-        print("警告: .env 中未找到 OPC_TAGS 配置")
-
-    # 检查客户端状态
-    if opc_client is None:
-        return jsonify({"error": "OPC 客户端未初始化"}), 500
-
-    # 检查是否有标签可读
-    if not TAG_LIST_TO_READ:
-        return jsonify({"error": "没有配置需要读取的 OPC 标签"}), 400
-
-    try:
-        # 3. 批量读取
-        read_data = opc_client.read(TAG_LIST_TO_READ)
-
-        results = {}
-        # OpenOPC 返回的结构通常是 (tag_name, value, quality, timestamp)
-        for item in read_data:
-            # 做个简单的长度保护，防止数据解包失败
-            if len(item) >= 4:
-                tag_name, value, quality, timestamp = item[:4]
-                results[tag_name] = {
-                    "value": value,
-                    "quality": quality,
-                    "timestamp": timestamp
-                }
-        print(f"成功读取 OPC 数据: {results}")
-        return jsonify(results)
-
-    except Exception as e:
-        print(f"API 错误: {e}")
-        return jsonify({"error": str(e)}), 500
+# @dataViewBp.route('/dataGet', methods=['GET'])
+# def dataGet():
+#     """
+#     从 OPC 服务器读取数据并以 JSON 格式返回。
+#     读取的点位列表由 .env 文件中的 OPC_TAGS 配置决定。
+#     """
+#
+#     # 1. 从环境变量读取配置字符串
+#     # 第二个参数是默认值，防止 .env 没配时报错
+#     tags_env_str = os.getenv('OPC_TAGS', '')
+#
+#     # 2. 将字符串转换为列表
+#     if tags_env_str:
+#         # split(',') 按逗号分割
+#         # strip() 去除每个点位名可能存在的首尾空格 (防止配置文件手误写了空格)
+#         TAG_LIST_TO_READ = [tag.strip() for tag in tags_env_str.split(',') if tag.strip()]
+#     else:
+#         # 如果 .env 没配，给一个空列表或者默认的 Bucket Brigade 列表作为后备
+#         TAG_LIST_TO_READ = []
+#         print("警告: .env 中未找到 OPC_TAGS 配置")
+#
+#     # 检查客户端状态
+#     if opc_client is None:
+#         return jsonify({"error": "OPC 客户端未初始化"}), 500
+#
+#     # 检查是否有标签可读
+#     if not TAG_LIST_TO_READ:
+#         return jsonify({"error": "没有配置需要读取的 OPC 标签"}), 400
+#
+#     try:
+#         # 3. 批量读取
+#         read_data = opc_client.read(TAG_LIST_TO_READ)
+#
+#         results = {}
+#         # OpenOPC 返回的结构通常是 (tag_name, value, quality, timestamp)
+#         for item in read_data:
+#             # 做个简单的长度保护，防止数据解包失败
+#             if len(item) >= 4:
+#                 tag_name, value, quality, timestamp = item[:4]
+#                 results[tag_name] = {
+#                     "value": value,
+#                     "quality": quality,
+#                     "timestamp": timestamp
+#                 }
+#         print(f"成功读取 OPC 数据: {results}")
+#         return jsonify(results)
+#
+#     except Exception as e:
+#         print(f"API 错误: {e}")
+#         return jsonify({"error": str(e)}), 500
 
 @dataViewBp.route('/dataCollect', methods=['POST'])
 def dataCollect():
