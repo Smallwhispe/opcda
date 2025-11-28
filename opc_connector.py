@@ -4,6 +4,9 @@ import atexit  # 用于在程序退出时自动关闭连接
 import os  # 新增
 from dotenv import load_dotenv  # 新增
 load_dotenv()
+import logging
+
+logger = logging.getLogger(__name__)
 # --- 配置 ---
 OPC_SERVER_NAME = os.getenv('OPC_SERVER_NAME', 'Matrikon.OPC.Simulation.1')
 GATEWAY_HOST = os.getenv('GATEWAY_HOST', '192.168.133.128')

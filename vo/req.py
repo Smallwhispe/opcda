@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import Optional, Dict, Any
 from datetime import datetime
 from pydantic import BaseModel
 
@@ -29,20 +29,6 @@ class QrQueryReq(BaseModel):
     message: Optional[str] = None
     type: Optional[str] = None
 
-class Produce:
-    arg2_ti1352_pv: Optional[str] = None
-    arg2_ti1329_pv: Optional[str] = None
-    arg2_ti1328_pv: Optional[str] = None
-    arg2_pic1306_pv: Optional[str] = None
-    arg2_ti1338_pv: Optional[str] = None
-    arg2_fic1308_pv: Optional[str] = None
-    arg2_fic1309_pv: Optional[str] = None
-    arg2_fic1310_pv: Optional[str] = None
-    arg2_fic1303_pv: Optional[str] = None
-    arg2_fic1311_pv: Optional[str] = None
-    arg2_ti1330_pv: Optional[str] = None
-
-
 class ModelPredictReq(BaseModel):
     """模型预测请求"""
     #模型版本号
@@ -52,7 +38,7 @@ class ModelPredictReq(BaseModel):
     #模型预测截止时间
     endTime: Optional[int] = None
     #工艺参数
-    produce: Optional[Produce] = None
+    produce: Optional[list[Dict[str, Any]]] = None
     # 添加这行配置, 允许嵌套的produce不是默认类型的存在
     model_config = {
         "arbitrary_types_allowed": True

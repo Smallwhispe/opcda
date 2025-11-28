@@ -1,3 +1,4 @@
+import logging
 from datetime import datetime
 from typing import Optional, Any, Dict, List, Union
 from uuid import uuid4
@@ -6,7 +7,7 @@ import pytz
 from pydantic import BaseModel, Field
 
 LOCAL_TZ = pytz.timezone("Asia/Shanghai")
-
+logger = logging.getLogger(__name__)
 
 def now_jst() -> datetime:
     return LOCAL_TZ.localize(datetime.now())
@@ -16,7 +17,7 @@ def now_jst() -> datetime:
 # 1. 更新 DataView 模型
 # ==========================================
 class DataView(BaseModel):
-    id: str = Field(default_factory=lambda: uuid4().hex)
+    id: Optional[int] = None
     dataType: Optional[str] = None
 
     # 存储每个 Tag 的具体质量 (Key: 完整Tag名, Value: Good/Bad)

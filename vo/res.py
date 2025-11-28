@@ -1,5 +1,6 @@
-from typing import Optional, List
+from typing import Optional, List, Dict, Any
 from pydantic import BaseModel
+from datetime import datetime
 from models.DataView import DataView
 
 class DataCollectRes(BaseModel):
@@ -41,9 +42,7 @@ class ModelPredictRes(BaseModel):
     startTime: Optional[int] = None
     #模型预测截止时间
     endTime: Optional[int] = None
+    #模型预测时间
+    time: Optional[datetime] = None
     #工艺参数
-    produce: Optional[Product] = None
-    # 添加这行配置, 允许嵌套的produce不是默认类型的存在
-    model_config = {
-        "arbitrary_types_allowed": True
-    }
+    result: Optional[Dict[str, Any]] = None

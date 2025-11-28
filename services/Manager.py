@@ -5,17 +5,18 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from typing import Optional, Any, List, Dict
 from models.DataView import DataView, parse_opc_data_to_data_view
+from models.PredictResult import PredictResult
 from opc_connector import opc_client
 from services.DataViewService import DataViewService
 from config.Config import Config
+from services.predict_result import insert_predict_record
 from vo.ResultEntity import ErrorCode
 from dotenv import load_dotenv  # 新增
 load_dotenv()
 
+logger = logging.getLogger(__name__)
 class Manager:
     def __init__(self):
-        self.logger = logging.getLogger(self.__class__.__name__)
-
         # 配置参数
         self.database_frequency = Config.DATABASE_FREQUENCY  # 数据保存频率（秒）
 
@@ -29,16 +30,16 @@ class Manager:
     def start(self):
         """启动服务"""
         if self._running:
-            self.logger.warning("服务已经在运行中")
+            logger.warning("服务已经在运行中")
             return
 
         self._running = True
-        self.logger.info("启动Manager服务")
+        logger.info("启动Manager服务")
 
         # # 使用线程池启动定时任务
         self.scheduler_executor.submit(self.schedule_database_refresh)
 
-        self.logger.info("Manager服务启动完成")
+        logger.info("Manager服务启动完成")
 
     def schedule_database_refresh(self):
         """定时写入数据到本地文件"""
@@ -48,21 +49,21 @@ class Manager:
                 self.task_executor.submit(self.refresh_database)
                 time.sleep(self.database_frequency)
             except Exception as e:
-                self.logger.error(f"数据刷新调度异常: {e}")
+                logger.error(f"数据刷新调度异常: {e}")
                 time.sleep(1)
 
     def refresh_database(self):
-        self.logger.info("[opc数据刷新] - opc数据刷新中")
+        logger.info("[opc数据刷新] - opc数据刷新中")
         try:
             # 从服务器获取数据
             data_view = self.catch_data_from_opc_client(opc_client)
             data_view.dataType = ErrorCode.COLLECT.get_msg()
-            self.logger.info(f"[opc数据刷新] - 获取数据dataView为: {data_view}")
+            logger.info(f"[opc数据刷新] - 获取数据dataView为: {data_view}")
             if data_view and data_view.time:
                 self.save_to_database(data_view.time, data_view)
         except Exception as e:
-            self.logger.error(f"[opc数据刷新] - opc数据刷新失败: {e}")
-        self.logger.info("[opc数据刷新] - opc数据刷新结束")
+            logger.error(f"[opc数据刷新] - opc数据刷新失败: {e}")
+        logger.info("[opc数据刷新] - opc数据刷新结束")
 
     def catch_data_from_opc_client(self, opc_client: Any) -> Optional['DataView']:
         """
@@ -81,7 +82,7 @@ class Manager:
 
         # --- 2. 检查客户端状态 ---
         if opc_client is None:
-            self.logger.error("[opc数据刷新] - OPC 客户端未初始化")
+            logger.error("[opc数据刷新] - OPC 客户端未初始化或连接")
             return None
 
         try:
@@ -93,7 +94,7 @@ class Manager:
                 self.logger.warning("[opc数据刷新] - 未读取到任何数据")
                 return None
 
-            self.logger.info(f"OPC数据读取成功，共获取 {len(read_data)} 条记录")
+            logger.info("OPC数据读取成功，开始转换。原始数据: %s", opc_raw_data)
 
             # --- 4. 直接转换 ---
             # 移除了中间的字典转换循环，直接把 read_data 列表扔给解析器
@@ -106,7 +107,7 @@ class Manager:
             return data_view
 
         except Exception as e:
-            self.logger.error(f"[opc数据刷新] - 异常: {e}", exc_info=True)
+            logger.error(f"[opc数据刷新] - OPC数据获取或转换异常: {e}", exc_info=True)
             return None
 
     def save_to_database(self, key: datetime, data_view: DataView) -> Optional[bool]:
@@ -116,16 +117,16 @@ class Manager:
 
         try:
             if data_view.id is None:
-                self.logger.warning("[opc缓存刷新] - 尝试保存空数据")
+                logger.warning("[opc缓存刷新] - 尝试保存空数据")
                 return False
             result = DataViewService.save(data_view)
             if result:
-                self.logger.debug(f"[opc缓存刷新] - 数据成功保存到数据库，key: {key}")
+                logger.debug(f"[opc缓存刷新] - 数据成功保存到数据库，key: {key}")
             else:
-                self.logger.warning(f"[opc缓存刷新] - 数据保存到数据库失败，key: {key}")
+                logger.warning(f"[opc缓存刷新] - 数据保存到数据库失败，key: {key}")
             return result
         except Exception as e:
-            self.logger.error(f"保存数据到缓存失败，key: {key}, 错误: {e}")
+            logger.error(f"保存数据到缓存失败，key: {key}, 错误: {e}")
             return False
 
     def shutdown(self):
@@ -133,14 +134,14 @@ class Manager:
         if not self._running:
             return
 
-        self.logger.info("Manager服务关闭中...")
+        logger.info("Manager服务关闭中...")
         self._running = False
 
         # 关闭线程池
         self.scheduler_executor.shutdown(wait=False, cancel_futures=True)
         self.task_executor.shutdown(wait=False, cancel_futures=True)
 
-        self.logger.info("Manager服务已关闭")
+        logger.info("Manager服务已关闭")
 
     @property
     def running(self):

@@ -35,8 +35,7 @@ from services.time_utils import (
     dt_to_ts,
     to_iso_from_ts
 )
-
-logger = logging.getLogger()
+logger = logging.getLogger(__name__)
 LOCAL_TZ = ZoneInfo("Asia/Shanghai")
 
 DATA_DIR = "repository"
@@ -47,7 +46,7 @@ DB_PATH = os.path.join(DATA_DIR, DB_FILENAME)
 # =========================
 # 1. 初始化 (建表)
 # =========================
-def init_db():
+def init_opc_db():
     os.makedirs(DATA_DIR, exist_ok=True)
     conn = sqlite3.connect(DB_PATH)
     try:
@@ -101,7 +100,12 @@ def insert_one_record(data_view: DataView) -> None:
     """
     # 1. 获取基础信息
     data_type = data_view.dataType if data_view.dataType else "default"
-    ts = int(data_view.time.timestamp())
+    dt = parse_dt_maybe(data.get("time"))
+    dt = standardize_dt(dt)
+    if dt is None:
+        logger.debug("insert_one_record: 时间解析失败，忽略该记录: %s", data)
+        return False
+    ts = dt_to_ts(dt)
 
     # --- 新增：获取 UUID ---
     record_id = data_view.id
@@ -343,3 +347,68 @@ def query_by_time_range_with_pagination(
         conn.close()
 
     return _rows_to_dicts(rows)
+
+# ---------- 可选工具：按页/按天获取最近 N 条（便于趋势展示） ----------
+def get_recent_n(data_type: str, n: int = 300) -> List[Dict[str, Any]]:
+    """
+    取最近 n 条（最新在后），适合画趋势图（会按 ts 升序返回）
+    """
+    if data_type is None:
+        data_type = "default"
+    conn = sqlite3.connect(DB_PATH)
+    try:
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT ts, quality_info,
+                   tic1201b, tic1345, ti1306, ti1329, ti1352a,
+                   fic1303, fic1309, fi1314,
+                   pic1302
+            FROM opc_data
+            WHERE data_type = ?
+            ORDER BY ts DESC
+            LIMIT ?
+        """, (data_type, n))
+        rows = cur.fetchall()
+    except Exception:
+        logger.exception("get_recent_n 执行失败")
+        rows = []
+    finally:
+        conn.close()
+
+    # rows 是降序，转换并逆序返回升序
+    tmp: List[Dict[str, Any]] = []
+    for ts, quality, temperature, flow, pressure, concentration, payload in rows:
+        rec = {
+            "time": to_iso_from_ts(ts),
+            "ts": ts,
+            "quality": quality,
+            "temperature": temperature,
+            "flow": flow,
+            "pressure": pressure,
+            "concentration": concentration
+        }
+        try:
+            rec["payload"] = json.loads(payload) if payload else None
+        except Exception:
+            rec["payload"] = payload
+        tmp.append(rec)
+    tmp.reverse()
+    return tmp
+
+def get_every_four_pick_thirty() -> List[Dict[str, Any]]:
+    """
+    从最新数据中每 4 条取 1 条，最终取 30 条
+    = 需要获取最近 120 条
+    """
+    needed_raw = 30 * 4  # 120 条
+    records = get_recent_n(data_type="采样数据", n=needed_raw)  # 你已有的函数
+
+    # 安全性判断：数据不够 120 条时自动补齐
+    if not records:
+        return []
+
+    # 每 4 条取 1 条
+    picked = records[::4]  # Python 切片步长 4
+
+    # 只取前 30 条即可
+    return picked[:30]
