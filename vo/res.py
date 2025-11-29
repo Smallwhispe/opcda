@@ -13,10 +13,7 @@ class DataCollectRes(BaseModel):
 
 class DataExportRes(BaseModel):
     """数据导出响应"""
-    #数据条目数量
-    total: Optional[int] = None
-    #工艺数据展示
-    dataList: Optional[List[DataView]] = None
+
     #数据文件名称
     fileName: Optional[str] = None
     #数据文件路径

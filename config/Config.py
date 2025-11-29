@@ -36,10 +36,12 @@ class Config:
 
     # OPC配置
     SERVER_NAME = os.getenv('SERVER_NAME', 'SpringOPCServer')
-    PROG_ID = os.getenv('PROG_ID', 'YourCompany.OPCServer')
-    READ = os.getenv('READ', 'read')
-    UPDATE_RATE = int(os.getenv('UPDATE_RATE', 1000))
-    CLASS_ID = os.getenv('CLASS_ID', '10000')
+    # PROG_ID = os.getenv('PROG_ID', 'YourCompany.OPCServer')
+    # READ = os.getenv('READ', 'read')
+    # UPDATE_RATE = int(os.getenv('UPDATE_RATE', 1000))
+    # CLASS_ID = os.getenv('CLASS_ID', '10000')
+    GATEWAY_HOST = os.getenv('GATEWAY_HOST', 'localhost')
+    OPC_TAGS = os.getenv('OPC_TAGS', '')
 
     @classmethod
     def to_dict(cls) -> Dict[str, Any]:

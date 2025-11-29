@@ -1,3 +1,4 @@
+import json
 import logging
 import os
 import qrcode
@@ -45,34 +46,26 @@ class DataViewService:
             if end_raw is None and isinstance(request, dict):
                 end_raw = request.get("endDate")
 
+            # 假设 standardize_dt 和 parse_dt_maybe 是你项目里的工具函数
             start_dt = standardize_dt(parse_dt_maybe(start_raw))
             end_dt = standardize_dt(parse_dt_maybe(end_raw))
-            logger.info("[data_preview] - 标准化时间窗口: start_dt=%s, end_dt=%s", start_dt, end_dt)
+            logger.info("[data_export] - 标准化时间窗口: start_dt=%s, end_dt=%s", start_dt, end_dt)
 
             if not start_dt:
-                # 没有start → 返回空
                 return ResultEntityMethod.buildSuccessResult(message="没有开始时间", data={
                     "dataList": [],
                     "total": 0
                 })
 
             if start_dt and not end_dt:
-                # 只有 start → 自动补 end = 当前时间
                 end_dt = datetime.now()
 
             if start_dt and end_dt and start_dt > end_dt:
                 start_dt, end_dt = end_dt, start_dt
 
+            # 假设 dt_to_ts 是你项目里的工具函数
             start_ts = dt_to_ts(start_dt)
             end_ts = dt_to_ts(end_dt)
-
-            try:
-                preview_records = query_by_time_range_with_pagination(
-                    data_type, start_ts, end_ts, page=1, size=100
-                )
-            except Exception as e:
-                logger.exception("[opc数据预览 - SQLite] 查询失败: %s", e)
-                return ResultEntityMethod.buildFailedResult(message="数据库查询失败")
 
 
             # ----------------------------------------------------------------------
@@ -85,7 +78,7 @@ class DataViewService:
                 return ResultEntityMethod.buildFailedResult(message="数据库全量查询失败")
 
             # ----------------------------------------------------------------------
-            # 5) 生成 CSV 文件
+            # 5) 生成 CSV 文件 (核心修改部分)
             # ----------------------------------------------------------------------
             export_dir = os.path.join(os.getcwd(), "export")
             os.makedirs(export_dir, exist_ok=True)
@@ -95,35 +88,50 @@ class DataViewService:
 
             try:
                 with open(file_path, "w", encoding="utf-8-sig", newline="") as f:
-                    writer = csv.writer(f)
 
-                    # 写表头（根据第一条记录来生成）
-                    if full_records:
-                        # 【关键修改】定义你想要的表头顺序
-                        # 你可以随意调整这个列表里的顺序，或者删除不想导出的列
-                        custom_headers = [
-                            "id",
-                            "time",
-                            "dataType",
-                            # --- 数值列 ---
-                            "tic1201b", "tic1345",
-                            "ti1306", "ti1329", "ti1352a",
-                            "fic1303", "fic1309", "fi1314",
-                            "pic1302",
-                            # --- 放在最后的列 ---
-                            "qualities"
-                        ]
+                    # --- 数据扁平化处理 ---
+                    # full_records 的结构是嵌套的：{'id':..., 'values': {'Tag1': 1, 'Tag2': 2}, ...}
+                    # csv.DictWriter 需要扁平的：{'id':..., 'Tag1': 1, 'Tag2': 2, ...}
 
-                        # 初始化 DictWriter
-                        # extrasaction='ignore': 如果数据里有某些字段(如 extra_field)不在 headers 里，忽略它，不报错
-                        writer = csv.DictWriter(f, fieldnames=custom_headers, extrasaction='ignore')
+                    flat_rows = []
+                    all_tags_set = set()  # 用于收集所有出现过的点位名，生成动态表头
+                    for record in full_records:
+                        flat_item = {}
 
-                        # 写入表头
-                        writer.writeheader()
+                        # 1. 基础字段
+                        flat_item['id'] = record.get('id')
+                        flat_item['dataType'] = record.get('dataType')
 
-                        # 写入数据
-                        if full_records:
-                            writer.writerows(full_records)
+                        # 2. 时间格式化 (datetime对象 -> 字符串)
+                        t_obj = record.get('time')
+                        if t_obj and isinstance(t_obj, datetime):
+                            flat_item['time'] = t_obj.strftime("%Y-%m-%d %H:%M:%S")
+                        else:
+                            flat_item['time'] = ""
+
+                        # 3. 展开 values 字典 (核心)
+                        values_data = record.get('values', {})
+                        if values_data:
+                            for tag_k, tag_v in values_data.items():
+                                flat_item[tag_k] = tag_v
+                                all_tags_set.add(tag_k)  # 收集表头
+
+                        # 4. 质量信息 (转 JSON 字符串存入一列)
+                        q_data = record.get('qualities', {})
+                        flat_item['qualities'] = json.dumps(q_data, ensure_ascii=False)
+
+                        flat_rows.append(flat_item)
+
+                    # --- 动态生成表头 ---
+                    # 基础列 + 排序后的点位列 + 质量列
+                    sorted_tags = sorted(list(all_tags_set))
+                    csv_headers = ["id", "time", "dataType"] + sorted_tags + ["qualities"]
+
+                    # --- 写入 CSV ---
+                    writer = csv.DictWriter(f, fieldnames=csv_headers, extrasaction='ignore')
+                    writer.writeheader()
+                    if flat_rows:
+                        writer.writerows(flat_rows)
 
             except Exception as e:
                 logger.exception("[opc数据预览 - CSV导出错误] %s", e)
@@ -132,15 +140,13 @@ class DataViewService:
             logger.info("[opc数据预览] - CSV 导出成功: %s", file_path)
 
             # ----------------------------------------------------------------------
-            # 6) 返回结果（包含：前 100 条 + CSV 信息）
+            # 6) 返回结果
             # ----------------------------------------------------------------------
             resp = {
-                "dataList": preview_records,
-                "total": len(preview_records),
                 "fileName": file_name,
                 "filePath": file_path
             }
-
+            logger.info("[opc数据导出] - 成功返回结果")
             return ResultEntityMethod.buildSuccessResult(data=resp)
 
         except Exception:
@@ -196,6 +202,7 @@ class DataViewService:
                 logger.exception("[opc数据预览 - SQLite] 查询失败: %s", e)
                 return ResultEntityMethod.buildFailedResult(message="数据库查询失败")
             logger.info("[opc数据预览] - 获取数据成功 (返回 %d 条)",len(records))
+            logger.info("[opc数据预览] - 数据样例 %s ", records[0] if records else "无数据")
 
             # 6) 返回结果 (移除 fileName 和 filePath)
             resp = {

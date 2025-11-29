@@ -1,7 +1,7 @@
 import logging
 import os
 
-from dotenv import load_dotenv
+from config.Config import config
 from flask import Blueprint, request, jsonify, send_from_directory, current_app
 from pydantic import ValidationError
 
@@ -16,7 +16,6 @@ from opc_connector import opc_client  # <-- 导入我们共享的客户端
 dataViewBp = Blueprint('dataViewBp', __name__, url_prefix='/data')
 
 
-load_dotenv()
 
 logger = logging.getLogger(__name__)
 @dataViewBp.route('/dataGet', methods=['GET'])
@@ -28,7 +27,7 @@ def dataGet():
 
     # 1. 从环境变量读取配置字符串
     # 第二个参数是默认值，防止 .env 没配时报错
-    tags_env_str = os.getenv('OPC_TAGS', '')
+    tags_env_str = config.OPC_TAGS
 
     # 2. 将字符串转换为列表
     if tags_env_str:
@@ -57,7 +56,9 @@ def dataGet():
         for item in read_data:
             # 做个简单的长度保护，防止数据解包失败
             if len(item) >= 4:
+
                 tag_name, value, quality, timestamp = item[:4]
+                tag_name=  str(tag_name).replace('.', '_')
                 results[tag_name] = {
                     "value": value,
                     "quality": quality,
@@ -203,15 +204,14 @@ def dataExport():
 
         # 调用业务逻辑
         result_data = DataViewService.data_export(dataExportReq)
-
+        logger.info("Data export result: %s", result_data.success)
         if result_data.success:
             # 构建响应
             response = DataExportRes(
-                total=result_data.data['total'],
-                dataList=result_data.data['dataList'],
                 fileName=result_data.data['fileName'],
                 filePath=result_data.data['filePath'],
             )
+            logger.info("Data export response constructed: %s", response)
             return jsonify(ResultEntityMethod.buildSuccessResult(ErrorCode.SUCCESS.get_code(), ErrorCode.SUCCESS.get_msg(),response.model_dump())), 200
         else:
             return jsonify(ResultEntityMethod.buildFailedResult(ErrorCode.SERVICE_FAILURE.get_code(), ErrorCode.SERVICE_FAILURE.get_msg(),None)), 500

@@ -17,97 +17,19 @@ def now_jst() -> datetime:
 # 1. 更新 DataView 模型
 # ==========================================
 class DataView(BaseModel):
-    id: Optional[int] = None
+    id: str = Field(default_factory=lambda: str(uuid4()))
     dataType: Optional[str] = None
+
+    # 存储数值 (Key: 完整点位名, Value: 数值)
+    # 例如: {"TI1352A_DACA_PV": 123.45, "TIC1201B_PIDA_PV": 88.0}
+    values: Dict[str, Any] = Field(default_factory=dict)
 
     # 存储每个 Tag 的具体质量 (Key: 完整Tag名, Value: Good/Bad)
     qualities: Dict[str, str] = Field(default_factory=dict)
 
-    # --- 9 个具体 DCS 点位的数值字段 ---
-    tic1201b: Optional[Any] = None
-    tic1345: Optional[Any] = None
-    ti1306: Optional[Any] = None
-    ti1329: Optional[Any] = None
-    ti1352a: Optional[Any] = None
-
-    fic1303: Optional[Any] = None
-    fic1309: Optional[Any] = None
-    fi1314: Optional[Any] = None
-
-    pic1302: Optional[Any] = None
-
     # 时间字段
     time: datetime = Field(default_factory=now_jst)
 
-    def to_dict(self):
-        """
-        转换为前端和数据库都需要的嵌套字典格式：
-        {
-            "id": "...",
-            "time": "...",
-            "TIC1201B.PIDA.PV": { "value": 123.4, "quality": "Good" },
-            ...
-        }
-        """
-        # 1. 时区处理
-        if self.time.tzinfo is None:
-            local_time = LOCAL_TZ.localize(self.time)
-        else:
-            local_time = self.time.astimezone(LOCAL_TZ)
-
-        time_str = local_time.strftime("%Y-%m-%d %H:%M:%S")
-        time_str_final = f"{time_str}+08:00"
-
-        # 2. 辅助组装函数
-        def make_item(field_val, tag_name):
-            # 获取质量，默认为 Bad
-            qual = self.qualities.get(tag_name, 'Bad')
-
-            # 如果有数值但没记录质量（防御性逻辑），默认视为 Good
-            if field_val is not None and tag_name not in self.qualities:
-                qual = 'Good'
-
-            return {
-                'value': field_val,
-                'quality': qual
-            }
-
-        # 3. 返回结构化数据
-        return {
-            'id': self.id,
-            'dataType': self.dataType,
-            'time': time_str_final,
-
-            # --- 映射回完整 Tag Name ---
-            'TIC1201B.PIDA.PV': make_item(self.tic1201b, 'TIC1201B.PIDA.PV'),
-            'TIC1345.PIDA.PV': make_item(self.tic1345, 'TIC1345.PIDA.PV'),
-            'TI1306.DACA.PV': make_item(self.ti1306, 'TI1306.DACA.PV'),
-            'TI1329.DACA.PV': make_item(self.ti1329, 'TI1329.DACA.PV'),
-            'TI1352A.DACA.PV': make_item(self.ti1352a, 'TI1352A.DACA.PV'),
-
-            'FIC1303.PIDA.PV': make_item(self.fic1303, 'FIC1303.PIDA.PV'),
-            'FIC1309.PIDA.PV': make_item(self.fic1309, 'FIC1309.PIDA.PV'),
-            'FI1314.DACA.PV': make_item(self.fi1314, 'FI1314.DACA.PV'),
-
-            'PIC1302.PIDA.PV': make_item(self.pic1302, 'PIC1302.PIDA.PV'),
-        }
-
-
-# ==========================================
-# 2. 映射配置
-# Key: Tag 中的关键特征串, Value: DataView 属性名
-# ==========================================
-OPC_FIELD_MAP = {
-    'TIC1201B': 'tic1201b',
-    'TIC1345': 'tic1345',
-    'TI1306': 'ti1306',
-    'TI1329': 'ti1329',
-    'TI1352A': 'ti1352a',
-    'FIC1303': 'fic1303',
-    'FIC1309': 'fic1309',
-    'FI1314': 'fi1314',
-    'PIC1302': 'pic1302'
-}
 
 
 def clean_opc_value(val: Any) -> Any:
@@ -129,73 +51,75 @@ def clean_opc_value(val: Any) -> Any:
 # ==========================================
 # 3. 解析逻辑 (适配 List 输入)
 # ==========================================
-def parse_opc_data_to_data_view(opc_raw_data: Union[List[tuple], Dict], data_type_tag: str = "default") -> DataView:
+def parse_opc_data_to_data_view(opc_raw_data: Union[List[tuple], Dict], data_type_tag: str = "采样数据") -> DataView:
     """
-    将OPC原始数据转换为DataView实例。
-    支持输入格式：
-    [('Tag', Val, Qual, Time), ...]
-    """
+    将 OPC 原始数据转换为 DataView 实例 (适配动态字典结构)。
 
-    model_data: Dict[str, Any] = {
-        'dataType': data_type_tag,
-        'qualities': {}
-    }
+    支持输入格式：
+    List: [('Tag.Name', Val, Qual, Time), ...]
+    """
+    logger.info("解析 OPC 原始数据到 DataView...")
+    logger.debug(f"原始数据样本: {str(opc_raw_data)[:500]}")  # 仅打印前500字符以防日志过长
+    # 临时存储解析后的数据
+    parsed_values: Dict[str, Any] = {}
+    parsed_qualities: Dict[str, str] = {}
     first_timestamp = None
 
-    # --- 1. 统一转为可遍历的 (tag, val, qual, time) 列表 ---
+    # --- 1. 统一输入格式为列表 ---
     items_to_process = []
 
     if isinstance(opc_raw_data, list):
-        # 适配你提供的: [('TIC...', 1.2, 'Good', 'Time'), ...]
         items_to_process = opc_raw_data
-    elif isinstance(opc_raw_data, dict):
-        # 兼容旧格式字典
-        for k, v in opc_raw_data.items():
-            items_to_process.append((k, v.get('value'), v.get('quality'), v.get('timestamp')))
+
 
     # --- 2. 遍历处理数据 ---
     for item in items_to_process:
-        if len(item) < 4: continue
+        # 确保数据元组至少有前4项 (Tag, Value, Quality, Time)
+        if len(item) < 4:
+            continue
 
         tag_name, raw_val, raw_qual, ts_str = item[:4]
 
-        # A. 解析时间 (只取第一个非空的)
+        # 确保 tag_name 是字符串 (视情况，你可以在这里做 .replace('_', '.') 的标准化处理)
+        tag_key = str(tag_name)
+        # tag_key = str(tag_name).replace('_', '.')  # 强制将分隔符转为 .
+
+        # A. 解析时间 (只取第一个非空的有效时间作为该批次时间)
         if ts_str and not first_timestamp:
             try:
-                # 处理可能带有的 +00:00 时区后缀
+                # 清理时间字符串逻辑 (保持你原有的逻辑)
                 clean_ts_str = str(ts_str)
                 if '+' in clean_ts_str:
                     clean_ts_str = clean_ts_str.split('+')[0]
-                elif clean_ts_str.count('-') > 2:  # 处理 2025-11-27... 中的负号
+                elif clean_ts_str.count('-') > 2:
                     last_dash = clean_ts_str.rfind('-')
-                    if last_dash > 10:  # 确保不是日期的横杠
+                    if last_dash > 10:
                         clean_ts_str = clean_ts_str[:last_dash]
 
+                # 注意：这里假设 timestamp 格式固定
                 dt_naive = datetime.strptime(clean_ts_str.strip(), "%Y-%m-%d %H:%M:%S.%f")
+                # 假设 LOCAL_TZ 全局变量存在
                 first_timestamp = LOCAL_TZ.localize(dt_naive)
             except (ValueError, TypeError):
-                # 如果解析失败，暂不处理，后面兜底
                 pass
 
-        # B. 记录质量
-        # 统一转为 'Good' 或 'Bad'
-        is_good = str(raw_qual).upper() in ['GOOD', 'TRUE', '1']
-        model_data['qualities'][tag_name] = 'Good' if is_good else 'Bad'
+        # B. 处理质量 (统一转为 'Good' / 'Bad')
+        # 很多 OPC Server 返回的 Good 可能是字符串 "Good" 也可能是布尔值 True 或数字 192/1
+        is_good = str(raw_qual).upper() in ['GOOD', 'TRUE', '1', '192']
+        parsed_qualities[tag_key] = 'Good' if is_good else 'Bad'
 
-        # C. 映射数值到 DataView 字段
-        mapped_field = None
-        for key, field in OPC_FIELD_MAP.items():
-            if key in tag_name:
-                mapped_field = field
-                break
+        # C. 处理数值 (直接存入 values 字典，不再查表映射)
+        # 调用你之前定义的 clean_opc_value 函数
+        parsed_values[tag_key] = clean_opc_value(raw_val)
 
-        if mapped_field:
-            model_data[mapped_field] = clean_opc_value(raw_val)
+    # --- 3. 组装最终对象 ---
 
-    # --- 3. 兜底时间 ---
-    if first_timestamp:
-        model_data['time'] = first_timestamp
-    else:
-        model_data['time'] = now_jst()
+    # 确定最终时间
+    final_time = first_timestamp if first_timestamp else now_jst()
 
-    return DataView(**model_data)
+    return DataView(
+        dataType=data_type_tag,
+        values=parsed_values,  # 动态数值字典
+        qualities=parsed_qualities,  # 动态质量字典
+        time=final_time
+    )

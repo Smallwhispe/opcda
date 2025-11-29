@@ -55,7 +55,6 @@ class Manager:
         try:
             # 从服务器获取数据
             data_view = self.catch_data_from_opc_client(opc_client)
-            data_view.dataType = ErrorCode.COLLECT.get_msg()
             logger.info(f"[opc数据刷新] - 获取数据dataView为: {data_view}")
             if data_view and data_view.time:
                 self.save_to_database(data_view.time, data_view)
@@ -87,12 +86,12 @@ class Manager:
             # --- 3. 读取数据 (List[tuple]) ---
             # 返回格式示例: [('TIC1201B...', 12.5, 'Good', '2025-11-27...'), ...]
             read_data = opc_client.read(tag_list_to_read)
-
+            logger.info(f"[opc数据刷新] - 读取到的原始数据样本: {str(read_data)[:500]}")  # 仅打印前500字符以防日志过长
             if not read_data:
                 logger.warning("[opc数据刷新] - 未读取到任何数据")
                 return None
 
-            logger.info(f"OPC数据读取成功，共获取 {len(read_data)} 条记录")
+            logger.info(f"OPC数据读取成功")
 
             # --- 4. 直接转换 ---
             # 移除了中间的字典转换循环，直接把 read_data 列表扔给解析器
