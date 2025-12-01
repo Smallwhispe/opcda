@@ -43,3 +43,14 @@ class ModelPredictReq(BaseModel):
     model_config = {
         "arbitrary_types_allowed": True
     }
+
+class PredictResultReq(BaseModel):
+    """预测结果"""
+    #页数
+    page: Optional[int] = None
+    #每页数量
+    size: Optional[int] = None
+    #模型预测起始时间
+    startTime: Optional[datetime] = None
+    #模型预测截止时间
+    endTime: Optional[datetime] = None

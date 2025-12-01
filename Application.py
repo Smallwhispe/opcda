@@ -62,7 +62,7 @@ if __name__ == '__main__':
         # 启动Flask应用（主线程）
         logging.info("启动Flask应用...")
         app = create_app()
-        app.run(debug=False, port=8181)
+        app.run(debug=False, port=8181, host="0.0.0.0")
     except KeyboardInterrupt:
         logging.info("接收到中断信号")
         manager_stop_event.set()

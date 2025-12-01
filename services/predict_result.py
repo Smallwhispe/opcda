@@ -114,7 +114,7 @@ def insert_predict_record(data: dict) -> bool:
 
 
 # ---------- 查询（按时间范围） ----------
-def query_by_time_range(start_ts: int, end_ts: int) -> List[Dict[str, Any]]:
+def query_predict_by_time_range(start_ts: int, end_ts: int) -> List[Dict[str, Any]]:
     conn = sqlite3.connect(DB_PATH)
     try:
         cur = conn.cursor()

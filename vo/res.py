@@ -43,3 +43,11 @@ class ModelPredictRes(BaseModel):
     time: Optional[datetime] = None
     #工艺参数
     result: Optional[Dict[str, Any]] = None
+
+class PredictResultRes(BaseModel):
+    """数据展示响应"""
+    #数据条目数量
+    #分页即为当前页数量
+    total: Optional[int] = None
+    #工艺数据展示
+    dataList: Optional[List[Dict[str, Any]]] = None

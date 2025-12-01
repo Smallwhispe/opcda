@@ -10,8 +10,9 @@ from services.DataViewService import DataViewService
 from services.ModelService import ModelService
 from vo.QrExport import QrExportReq, QrExportRes
 from vo.ResultEntity import ResultEntityMethod, ErrorCode
-from vo.req import DataCollectReq, DataExportReq, QrQueryReq
-from vo.res import ModelPredictRes, DataCollectRes, DataExportRes, QrQueryRes
+from vo.req import DataCollectReq, DataExportReq, QrQueryReq, PredictResultReq
+from vo.res import ModelPredictRes, DataCollectRes, DataExportRes, QrQueryRes, PredictResultRes
+
 from opc_connector import opc_client  # <-- 导入我们共享的客户端
 dataViewBp = Blueprint('dataViewBp', __name__, url_prefix='/data')
 
@@ -147,6 +148,49 @@ def dataCollectByPage():
     except Exception as e:
         logger.error("[opc数据获取] - opc数据获取未知失败", e)
         return jsonify(ResultEntityMethod.buildFailedResult(ErrorCode.FAILURE.get_code(), ErrorCode.FAILURE.get_msg(), None)), 500
+
+@dataViewBp.route('/predictResult', methods=['POST'])
+def predictResult():
+    try:
+        data = request.get_json(silent=True)
+        if not data:
+            return jsonify(ResultEntityMethod.buildFailedResult(ErrorCode.NO_PARAM.get_code(), ErrorCode.NO_PARAM.get_msg(),None)), 400
+
+        predictResultReq = PredictResultReq.model_validate(data)
+
+        # 调用业务逻辑
+        logger.info("Received data collect request: %s", predictResultReq)
+        result_data = DataCollectService.predict_result(predictResultReq)
+        if result_data.success:
+            response_data = PredictResultRes(
+                total=result_data.data['total'],
+                dataList=result_data.data['dataList'],
+            )
+
+            return jsonify(ResultEntityMethod.buildSuccessResult(
+                ErrorCode.SUCCESS.get_code(),
+                ErrorCode.SUCCESS.get_msg(),
+                # 关键：手动转换为字典，解决 JSON 序列化问题
+                response_data.model_dump()
+            )), 200
+        else:
+            # 业务失败直接返回 ResultEntity 的 JSON 封装
+            return jsonify(result_data.data.model_dump()), 500
+
+    except ValidationError as e:
+        # Pydantic 校验失败
+        return jsonify(ResultEntityMethod.buildFailedResult(
+            ErrorCode.VALID_FAILURE.get_code(),
+            f"请求参数格式校验失败",
+            None)), 400
+
+    except Exception as e:
+        # 未知服务器错误
+        logger.error("[opc预测数据获取] - opc数据获取未知失败: %s", e, exc_info=True)
+        return jsonify(ResultEntityMethod.buildFailedResult(
+            ErrorCode.FAILURE.get_code(),
+            "服务器内部错误",
+            None)), 500
 
 @dataViewBp.route('/dataPreview', methods=['POST'])
 def dataPreview():
