@@ -192,6 +192,33 @@ def predictResult():
             "服务器内部错误",
             None)), 500
 
+@dataViewBp.route('/predictOne', methods=['GET'])
+def predictOne():
+    try:
+        result_data = DataCollectService.predict_one()
+        if result_data.success:
+            response_data = PredictResultRes(
+                total=result_data.data['total'],
+                dataList=result_data.data['dataList'],
+            )
+
+            return jsonify(ResultEntityMethod.buildSuccessResult(
+                ErrorCode.SUCCESS.get_code(),
+                ErrorCode.SUCCESS.get_msg(),
+                # 关键：手动转换为字典，解决 JSON 序列化问题
+                response_data.model_dump()
+            )), 200
+        else:
+            # 业务失败直接返回 ResultEntity 的 JSON 封装
+            return jsonify(result_data.data.model_dump()), 500
+
+    except Exception as e:
+        # 未知服务器错误
+        logger.error("[opc预测数据获取] - opc数据获取未知失败: %s", e, exc_info=True)
+        return jsonify(ResultEntityMethod.buildFailedResult(
+            ErrorCode.FAILURE.get_code(),
+            "服务器内部错误",
+            None)), 500
 @dataViewBp.route('/dataPreview', methods=['POST'])
 def dataPreview():
     try:

@@ -2,7 +2,7 @@ import logging
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
-from services.predict_result import query_predict_by_time_range
+from services.predict_result import query_predict_by_time_range, get_recent_n
 from services.time_utils import parse_dt_maybe, standardize_dt, dt_to_ts
 from services.repository_sqlite import (
     query_by_time_range,
@@ -140,6 +140,20 @@ class DataCollectService:
             end_ts   = dt_to_ts(end_dt)
 
             records = query_predict_by_time_range(start_ts, end_ts)
+            logger.info("[predict_result] - 查询结果样例: %s", records[:5])
+            return ResultEntityMethod.buildSuccessResult(data={
+                "dataList": records,
+                "total": len(records)
+            })
+
+        except Exception:
+            logger.exception("[SQLite] predict_result 失败")
+            return ResultEntityMethod.buildFailedResult(message="本地数据读取失败")
+
+    @staticmethod
+    def predict_one() -> ResultEntity:
+        try:
+            records = get_recent_n(1)
             logger.info("[predict_result] - 查询结果样例: %s", records[:5])
             return ResultEntityMethod.buildSuccessResult(data={
                 "dataList": records,
