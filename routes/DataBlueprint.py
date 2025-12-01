@@ -195,7 +195,9 @@ def predictResult():
 @dataViewBp.route('/predictOne', methods=['GET'])
 def predictOne():
     try:
+        logger.info('Received predict one request')
         result_data = DataCollectService.predict_one()
+        logger.info("Predict one result: %s", result_data)
         if result_data.success:
             response_data = PredictResultRes(
                 total=result_data.data['total'],

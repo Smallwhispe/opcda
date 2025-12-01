@@ -10,8 +10,7 @@ from services.DataViewService import DataViewService
 from config.Config import Config
 from services.ModelService import ModelService
 from vo.ResultEntity import ErrorCode
-from dotenv import load_dotenv  # 新增
-load_dotenv()
+
 
 logger = logging.getLogger(__name__)
 class Manager:
@@ -82,7 +81,7 @@ class Manager:
         """
 
         # --- 1. 从环境变量获取配置的点位 ---
-        tags_env_str = os.getenv('OPC_TAGS', '')
+        tags_env_str = Config.OPC_TAGS
 
         if tags_env_str:
             tag_list_to_read = [tag.strip() for tag in tags_env_str.split(',') if tag.strip()]
