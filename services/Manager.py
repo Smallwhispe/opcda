@@ -8,6 +8,7 @@ from models.DataView import DataView, parse_opc_data_to_data_view
 from opc_connector import opc_client
 from services.DataViewService import DataViewService
 from config.Config import Config
+from services.ModelService import ModelService
 from vo.ResultEntity import ErrorCode
 from dotenv import load_dotenv  # 新增
 load_dotenv()
@@ -36,8 +37,20 @@ class Manager:
 
         # # 使用线程池启动定时任务
         self.scheduler_executor.submit(self.schedule_database_refresh)
+        self.scheduler_executor.submit(self.schedule_model_predict)
 
         logger.info("Manager服务启动完成")
+
+    def schedule_model_predict(self):
+        """定时预测"""
+        while self._running:
+            try:
+                # 使用任务线程池执行缓存刷新
+                result = ModelService.model_predict()
+                time.sleep(self.database_frequency)
+            except Exception as e:
+                logger.error(f"数据刷新调度异常: {e}")
+                time.sleep(1)
 
     def schedule_database_refresh(self):
         """定时写入数据到本地文件"""

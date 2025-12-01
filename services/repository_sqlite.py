@@ -300,8 +300,8 @@ def _rows_to_dicts(rows: list) -> list:
 
     return results
 
-def get_recent_n(data_type: str, n: int = 300) -> List[Dict[str, Any]]:
-    if data_type is None: data_type = "default"
+def get_recent_n(n: int = 300) -> List[Dict[str, Any]]:
+    data_type = "采样数据"
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
     try:
@@ -428,7 +428,7 @@ def get_every_four_pick_thirty() -> List[Dict[str, Any]]:
     = 需要获取最近 120 条
     """
     needed_raw = 30 * 4  # 120 条
-    records = get_recent_n(data_type="采样数据", n=needed_raw)  # 你已有的函数
+    records = get_recent_n(n=needed_raw)  # 你已有的函数
 
     # 安全性判断：数据不够 120 条时自动补齐
     if not records:

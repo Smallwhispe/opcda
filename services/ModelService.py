@@ -25,7 +25,7 @@ class ModelService:
                 timeout=5
             )
             result = response.json()
-            logger.info(result)
+
             # 将查询结果转换为字典列表
             model_predict_res = {'time': result['time'], 'result': result['result']}
             return ResultEntityMethod.buildSuccessResult(data=model_predict_res)
@@ -194,9 +194,9 @@ class ModelService:
             result_gan_dian = ModelService.model_ip_port_route(request_gan_dian, Config.IP, Config.PORT, "predict_gandian")
             predict_result = PredictResult(
                 pressure=str(result_pressure.data['result']) if result_pressure.success else None,  # ← 注意替换字段
-                c5=result_c5.data['result'] if result_c5.success else None,
-                bing_xi=result_bing_xi.data['result'] if result_bing_xi.success else None,
-                gan_dian=result_gan_dian.data['result'] if result_gan_dian.success else None,
+                c5=str(result_c5.data['result']) if result_c5.success else None,
+                bing_xi=str(result_bing_xi.data['result']) if result_bing_xi.success else None,
+                gan_dian=str(result_gan_dian.data['result']) if result_gan_dian.success else None,
             )
             insert_predict_record({
                 "time": dt_to_ts(predict_result.time),
@@ -230,13 +230,14 @@ class ModelService:
             gan_dian_inputs = []
             # 将 sampled 里的每条记录按字段放到对应模型的输入列表中
             for rec in sampled:
-                pressure_inputs = ModelService.build_pressure_inputs(rec)
-                c5_inputs = ModelService.build_c5_inputs(rec)
-                bing_xi_inputs = ModelService.build_bing_xi_inputs(rec)
-                gan_dian_inputs = ModelService.build_gan_dian_inputs(rec)
+                pressure_inputs.extend(ModelService.build_pressure_inputs(rec))
+                c5_inputs.extend(ModelService.build_c5_inputs(rec))
+                bing_xi_inputs.extend(ModelService.build_bing_xi_inputs(rec))
+                gan_dian_inputs.extend(ModelService.build_gan_dian_inputs(rec))
             latest_ts = int(time.time())
-            if sampled:
-                latest_ts = sampled[-1].get("ts")  # 最后一条就是最新（升序）
+            # if sampled:
+            #     latest_ts = sampled[0].get("ts")  # 最后一条就是最新（升序）
+
             # 构造模型预测请求值
             request_pressure = ModelPredictReq(produce=pressure_inputs, endTime=latest_ts)
             request_c5 = ModelPredictReq(produce=c5_inputs, endTime=latest_ts)
@@ -275,9 +276,10 @@ class ModelService:
             return ResultEntityMethod.buildFailedResult(message="模型调用未知错误")
 
     @staticmethod
-    def build_pressure_inputs(rec: Dict[str, Any]) -> List[Dict[str, Any]]:
+    def build_pressure_inputs(req: Dict[str, Any]) -> List[Dict[str, Any]]:
+        rec = req.get("values", {})
         pressure_inputs = [{
-            "ARG2_TI1352A_PV": rec.get("TI1352A_DACA_PV"),
+            "ARG2_TI1352A_PV": rec["TI1352A_DACA_PV"],
             "ARG2_TI1329_PV": rec.get("TI1329_DACA_PV"),
             "ARG2_TI1328_PV": rec.get("TI1328_DACA_PV"),
             "ARG2_PIC1306_PV": rec.get("PIC1306_PIDA_PV"),
@@ -292,7 +294,8 @@ class ModelService:
         return pressure_inputs
 
     @staticmethod
-    def build_c5_inputs(rec: Dict[str, Any]) -> List[Dict[str, Any]]:
+    def build_c5_inputs(req: Dict[str, Any]) -> List[Dict[str, Any]]:
+        rec = req.get("values", {})
         c5_inputs = [{
             "ARG2_TI1352A_PV": rec.get("TI1352A_DACA_PV"),
             "ARG2_TI1329_PV": rec.get("TI1329_DACA_PV"),
@@ -309,7 +312,8 @@ class ModelService:
         return c5_inputs
 
     @staticmethod
-    def build_bing_xi_inputs(rec: Dict[str, Any]) -> List[Dict[str, Any]]:
+    def build_bing_xi_inputs(req: Dict[str, Any]) -> List[Dict[str, Any]]:
+        rec = req.get("values", {})
         bing_xi_inputs = [{
             "ARG2_TIC1345_PV": rec.get("TIC1345_PIDA_PV"),
             "ARG2_FIC1303_PV": rec.get("FIC1303_PIDA_PV"),
@@ -336,7 +340,8 @@ class ModelService:
         return bing_xi_inputs
 
     @staticmethod
-    def build_gan_dian_inputs(rec: Dict[str, Any]) -> List[Dict[str, Any]]:
+    def build_gan_dian_inputs(req: Dict[str, Any]) -> List[Dict[str, Any]]:
+        rec = req.get("values", {})
         gan_dian_inputs = [{
             "ARG2_TIC1201B_PV": rec.get("TIC1201B_PIDA_PV"),
             "ARG2_PI1204_PV": rec.get("PI1204_DACA_PV"),
