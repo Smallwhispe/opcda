@@ -6,7 +6,7 @@ from logging.handlers import TimedRotatingFileHandler
 def setup_logging(
     log_dir: str = "logs",
     basename: str = "app.log",
-    level: int = logging.WARNING,   # 默认把文件日志等级设为 WARNING，可传 logging.ERROR / logging.INFO ...
+    level: int = logging.INFO,   # 默认把文件日志等级设为 WARNING，可传 logging.ERROR / logging.INFO ...
     when: str = "midnight",
     backup_count: int = 7
 ):

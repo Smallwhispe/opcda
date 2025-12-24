@@ -294,9 +294,9 @@ def _rows_to_dicts(rows: list) -> list:
         results.append(data_view_data)
 
     # 打印一条日志验证格式
-    if results:
-        # 为了日志不报错，我们简单打印一下第一条数据的keys
-        logger.info("_rows_to_dicts - 首条记录结构: keys=%s", list(results[0].keys()))
+    # if results:
+    #     # 为了日志不报错，我们简单打印一下第一条数据的keys
+    #     logger.info("_rows_to_dicts - 首条记录结构: keys=%s", list(results[0].keys()))
 
     return results
 
@@ -337,7 +337,7 @@ def query_by_time_range(data_type: str, start_ts: int, end_ts: int) -> List[Dict
     """
     if data_type is None:
         data_type = "default"
-    logger.info("query_by_time_range - data_type=%s, start_ts=%d, end_ts=%d", data_type, start_ts, end_ts)
+    # logger.info("query_by_time_range - data_type=%s, start_ts=%d, end_ts=%d", data_type, start_ts, end_ts)
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row  # 必须开启，以便通过列名访问
     try:
@@ -358,8 +358,8 @@ def query_by_time_range(data_type: str, start_ts: int, end_ts: int) -> List[Dict
             ORDER BY ts ASC
         """, (data_type, start_ts, end_ts))
         rows = cur.fetchall()
-        logger.info("query_by_time_range - 查询到 %d 条记录", len(rows))
-        logger.info("query_by_time_range - 首条记录: %s", dict(rows[0]) if rows else "无记录")
+        # logger.info("query_by_time_range - 查询到 %d 条记录", len(rows))
+        # logger.info("query_by_time_range - 首条记录: %s", dict(rows[0]) if rows else "无记录")
     except Exception:
         logger.exception("query_by_time_range 执行失败")
         rows = []

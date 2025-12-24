@@ -1,4 +1,5 @@
 import logging
+import socket
 import time
 from typing import Dict, List, Any
 
@@ -333,7 +334,7 @@ class ModelService:
             "ARG2_TI1304_PV": rec.get("TI1304_DACA_PV"),
             "ARG2_TIC1101_PV": rec.get("TIC1101_PIDA_PV"),
             "ARG2_TIC1103_PV": rec.get("TIC1103_PIDA_PV"),
-            "ARG2_TI1233C_PV": rec.get("TI1233C_PIDA_PV"),
+            "ARG2_TI1233C_PV": rec.get("TI1233C_DACA_PV"),
             "ARG2_TI1306_PV": rec.get("TI1306_DACA_PV"),
 
         }]

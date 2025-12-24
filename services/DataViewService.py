@@ -49,7 +49,7 @@ class DataViewService:
             # 假设 standardize_dt 和 parse_dt_maybe 是你项目里的工具函数
             start_dt = standardize_dt(parse_dt_maybe(start_raw))
             end_dt = standardize_dt(parse_dt_maybe(end_raw))
-            logger.info("[data_export] - 标准化时间窗口: start_dt=%s, end_dt=%s", start_dt, end_dt)
+            # logger.info("[data_export] - 标准化时间窗口: start_dt=%s, end_dt=%s", start_dt, end_dt)
 
             if not start_dt:
                 return ResultEntityMethod.buildSuccessResult(message="没有开始时间", data={
@@ -137,7 +137,7 @@ class DataViewService:
                 logger.exception("[opc数据预览 - CSV导出错误] %s", e)
                 return ResultEntityMethod.buildFailedResult(message="CSV导出失败")
 
-            logger.info("[opc数据预览] - CSV 导出成功: %s", file_path)
+            # logger.info("[opc数据预览] - CSV 导出成功: %s", file_path)
 
             # ----------------------------------------------------------------------
             # 6) 返回结果
@@ -146,7 +146,7 @@ class DataViewService:
                 "fileName": file_name,
                 "filePath": file_path
             }
-            logger.info("[opc数据导出] - 成功返回结果")
+            # logger.info("[opc数据导出] - 成功返回结果")
             return ResultEntityMethod.buildSuccessResult(data=resp)
 
         except Exception:
@@ -177,7 +177,7 @@ class DataViewService:
 
             start_dt = standardize_dt(parse_dt_maybe(start_raw))
             end_dt = standardize_dt(parse_dt_maybe(end_raw))
-            logger.info("[data_preview] - 标准化时间窗口: start_dt=%s, end_dt=%s", start_dt, end_dt)
+            # logger.info("[data_preview] - 标准化时间窗口: start_dt=%s, end_dt=%s", start_dt, end_dt)
 
             if not start_dt:
                 # 没有start → 返回空
@@ -201,8 +201,8 @@ class DataViewService:
             except Exception as e:
                 logger.exception("[opc数据预览 - SQLite] 查询失败: %s", e)
                 return ResultEntityMethod.buildFailedResult(message="数据库查询失败")
-            logger.info("[opc数据预览] - 获取数据成功 (返回 %d 条)",len(records))
-            logger.info("[opc数据预览] - 数据样例 %s ", records[0] if records else "无数据")
+            # logger.info("[opc数据预览] - 获取数据成功 (返回 %d 条)",len(records))
+            # logger.info("[opc数据预览] - 数据样例 %s ", records[0] if records else "无数据")
 
             # 6) 返回结果 (移除 fileName 和 filePath)
             resp = {
@@ -247,7 +247,7 @@ class DataViewService:
                 export_dir = "export"
                 if not os.path.exists(export_dir):
                     os.makedirs(export_dir)
-                    logger.info(f"[qr 导出] - 创建目录: {export_dir}")
+                    # logger.info(f"[qr 导出] - 创建目录: {export_dir}")
 
                 def get_unique_filename(export_dir, filename):
                     """
@@ -273,8 +273,8 @@ class DataViewService:
                 # img可导出返回
                 img = qr.make_image(fill_color=request.get("fill_color"), back_color=request.get("back_color"))
                 img.save(filepath)
-                logger.info(f"[qr 导出] - 二维码已成功生成并保存为: {filepath}")
-                logger.info(f"[qr 导出] - 编码的数据: {data}")
+                # logger.info(f"[qr 导出] - 二维码已成功生成并保存为: {filepath}")
+                # logger.info(f"[qr 导出] - 编码的数据: {data}")
                 qr_export_res = QrExportRes(
                     exportSuccess = True
                 )
@@ -297,7 +297,7 @@ class DataViewService:
             # 3. 追加写入当日文件
             insert_one_record(data_view)
 
-            logger.info("[opc数据存储] - 本地写入成功: %s", data_view.id)
+            # logger.info("[opc数据存储] - 本地写入成功: %s", data_view.id)
             return True
 
         # 由于 Manager 传入的已经是 DataView 实例，理论上不会有 ValidationError

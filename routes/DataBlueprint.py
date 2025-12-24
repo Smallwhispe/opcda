@@ -13,7 +13,7 @@ from vo.ResultEntity import ResultEntityMethod, ErrorCode
 from vo.req import DataCollectReq, DataExportReq, QrQueryReq, PredictResultReq
 from vo.res import ModelPredictRes, DataCollectRes, DataExportRes, QrQueryRes, PredictResultRes
 
-from opc_connector import opc_client  # <-- 导入我们共享的客户端
+from opc_connector import get_opc_client  # <-- 导入我们共享的客户端
 dataViewBp = Blueprint('dataViewBp', __name__, url_prefix='/data')
 
 
@@ -39,14 +39,11 @@ def dataGet():
         # 如果 .env 没配，给一个空列表或者默认的 Bucket Brigade 列表作为后备
         TAG_LIST_TO_READ = []
         print("警告: .env 中未找到 OPC_TAGS 配置")
-
+    opc_client = get_opc_client()
     # 检查客户端状态
     if opc_client is None:
         return jsonify({"error": "OPC 客户端未初始化"}), 500
 
-    # 检查是否有标签可读
-    if not TAG_LIST_TO_READ:
-        return jsonify({"error": "没有配置需要读取的 OPC 标签"}), 400
 
     try:
         # 3. 批量读取
@@ -65,7 +62,7 @@ def dataGet():
                     "quality": quality,
                     "timestamp": timestamp
                 }
-        print(f"成功读取 OPC 数据: {results}")
+        # print(f"成功读取 OPC 数据: {results}")
         return jsonify(results)
 
     except Exception as e:
@@ -84,7 +81,7 @@ def dataCollect():
         dataCollectReq = DataCollectReq.model_validate(data)
 
         # 调用业务逻辑
-        logger.info("Received data collect request: %s", dataCollectReq)
+        # logger.info("Received data collect request: %s", dataCollectReq)
         result_data = DataCollectService.data_collect(dataCollectReq)
 
         if result_data.success:
@@ -159,7 +156,7 @@ def predictResult():
         predictResultReq = PredictResultReq.model_validate(data)
 
         # 调用业务逻辑
-        logger.info("Received data collect request: %s", predictResultReq)
+        # logger.info("Received data collect request: %s", predictResultReq)
         result_data = DataCollectService.predict_result(predictResultReq)
         if result_data.success:
             response_data = PredictResultRes(
@@ -195,9 +192,9 @@ def predictResult():
 @dataViewBp.route('/predictOne', methods=['GET'])
 def predictOne():
     try:
-        logger.info('Received predict one request')
+        # logger.info('Received predict one request')
         result_data = DataCollectService.predict_one()
-        logger.info("Predict one result: %s", result_data)
+        # logger.info("Predict one result: %s", result_data)
         if result_data.success:
             response_data = PredictResultRes(
                 total=result_data.data['total'],
@@ -224,7 +221,7 @@ def predictOne():
 @dataViewBp.route('/dataPreview', methods=['POST'])
 def dataPreview():
     try:
-        logger.info("Received data preview request with args: %s", request.args)
+        # logger.info("Received data preview request with args: %s", request.args)
         data = request.get_json(silent=True)
         if not data:
             return jsonify(
@@ -277,14 +274,14 @@ def dataExport():
 
         # 调用业务逻辑
         result_data = DataViewService.data_export(dataExportReq)
-        logger.info("Data export result: %s", result_data.success)
+        # logger.info("Data export result: %s", result_data.success)
         if result_data.success:
             # 构建响应
             response = DataExportRes(
                 fileName=result_data.data['fileName'],
                 filePath=result_data.data['filePath'],
             )
-            logger.info("Data export response constructed: %s", response)
+            # logger.info("Data export response constructed: %s", response)
             return jsonify(ResultEntityMethod.buildSuccessResult(ErrorCode.SUCCESS.get_code(), ErrorCode.SUCCESS.get_msg(),response.model_dump())), 200
         else:
             return jsonify(ResultEntityMethod.buildFailedResult(ErrorCode.SERVICE_FAILURE.get_code(), ErrorCode.SERVICE_FAILURE.get_msg(),None)), 500
@@ -318,7 +315,7 @@ def download_file():
     #    并获取其相对于当前应用实例的绝对路径
     safe_directory = os.path.join(current_app.root_path, "export")
 
-    logger.info(f"请求下载文件: {filename} 从目录: {safe_directory}")
+    # logger.info(f"请求下载文件: {filename} 从目录: {safe_directory}")
 
     try:
         # 3. 使用 send_from_directory 安全地发送文件
