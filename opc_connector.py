@@ -42,21 +42,28 @@ def get_opc_client():
 
     # 1. 如果没有实例，尝试创建
     if _opc_client_instance is None:
+        logger.info("OPC 连接器: 无现有连接，正在创建新连接...")
         _opc_client_instance = create_connection()
         return _opc_client_instance
 
     # 2. 如果有实例，检查心跳 (Ping)
     try:
         # ping() 方法在 OpenOPC.py 中已定义，它会检查 CurrentTime 是否变化
-        if not safe_ping(_opc_client_instance):
+        logger.debug("OPC 连接器: 正在进行心跳检测...")
+        ping_result = safe_ping(_opc_client_instance)
+        logger.debug(f"OPC 连接器: 心跳检测结果 = {ping_result}")
+
+        if not ping_result:
             logger.warning("OPC 连接器: 心跳检测失败 (Ping return False)，正在重连...")
             raise Exception("Ping failed")
 
         # 心跳正常，直接返回
+        logger.debug("OPC 连接器: 心跳正常，返回现有连接")
         return _opc_client_instance
 
     except Exception as e:
         logger.warning(f"OPC 连接器: 连接检测到异常 ({e})，正在执行重置和重连...")
+        logger.debug(f"OPC 连接器: 异常类型 = {type(e).__name__}")
 
         # 尝试清理旧连接
         try:
@@ -79,20 +86,41 @@ def safe_ping(client):
     """
     try:
         # 尝试调用原生 ping
-        return client.ping()
+        result = client.ping()
+        logger.debug(f"OPC 连接器: ping 原始结果 = {result}, 类型 = {type(result)}")
+        return result
     except Exception as e:
-        err_str = str(e)
+        # 获取异常信息
+        err_str = ""
+        try:
+            if e is not None:
+                err_str = str(e)
+        except Exception:
+            pass
 
-        # 核心修复逻辑：
-        # 如果捕获到 pywintypes.datetime 类型转换错误，说明服务端其实是通的（否则连时间对象都拿不到）
-        # 返回 True (连接正常)
-        # 优化：使用 lower() 忽略大小写，且只要包含关键字即视为该错误，防止报错文本差异
-        err_lower = err_str.lower()
-        if "pywintypes" in err_lower or "float" in err_lower and "datetime" in err_lower:
-            # logger.debug(f"已忽略 OpenOPC 兼容性错误，视为连接正常: {err_str}")
+        logger.debug(f"OPC 连接器: ping 异常 = {err_str}")
+
+        # 确保 err_str 是字符串
+        if not isinstance(err_str, str):
+            logger.warning("OPC 连接器: 异常信息非字符串类型，视为连接正常")
             return True
 
-        # 如果是真正的连接错误（如 Socket closed, Timeout），则继续抛出
+        # 检查是否是已知的兼容性问题
+        try:
+            err_lower = err_str.lower()
+            # pywintypes 或 float/datetime 转换错误 -> 连接实际是正常的
+            if "pywintypes" in err_lower:
+                logger.debug("OPC 连接器: 检测到 pywintypes 错误，视为连接正常")
+                return True
+            if "float" in err_lower and "datetime" in err_lower:
+                logger.debug("OPC 连接器: 检测到 float/datetime 错误，视为连接正常")
+                return True
+        except Exception as check_err:
+            logger.warning(f"OPC 连接器: 检查异常信息时出错: {check_err}")
+            return True
+
+        # 如果是真正的连接错误，继续抛出
+        logger.warning(f"OPC 连接器: ping 失败，将重连: {err_str}")
         raise e
 def close_connection():
     """手动关闭连接（供程序退出使用）"""

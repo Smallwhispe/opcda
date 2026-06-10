@@ -43,6 +43,11 @@ class Config:
     GATEWAY_HOST = os.getenv('GATEWAY_HOST', 'localhost')
     OPC_TAGS = os.getenv('OPC_TAGS', '')
 
+
+    # OPC UA配置
+    OPC_UA_URL = os.getenv('OPC_UA_URL')
+    OPC_UA_NAMESPACE_URI = os.getenv('OPC_UA_NAMESPACE_URI')
+
     @classmethod
     def to_dict(cls) -> Dict[str, Any]:
         """将配置转换为字典"""

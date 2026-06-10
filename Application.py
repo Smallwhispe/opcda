@@ -57,7 +57,7 @@ manager_stop_event = threading.Event()
 
 
 def create_app():
-    setup_logging(log_dir="logs", basename="myflask.log", level=logging.INFO)
+    # setup_logging(log_dir="logs", basename="myflask.log", level=logging.INFO)
 
     # --- 修改：指定静态文件夹路径 ---
     app = Flask(__name__, static_folder=get_static_folder())
@@ -109,12 +109,13 @@ def run_manager():
 
 if __name__ == '__main__':
     # 配置日志
-    logging.basicConfig(
-        level=logging.INFO,
-        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    setup_logging(
+        log_dir="logs",
+        basename="myflask.log",
+        level=logging.WARNING,
     )
     log = logging.getLogger('werkzeug')
-    # log.setLevel(logging.WARNING)
+    log.setLevel(logging.WARNING)
 
     # 1. 启动后台业务线程
     manager_thread = threading.Thread(target=run_manager, daemon=True)

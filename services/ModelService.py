@@ -30,8 +30,8 @@ class ModelService:
             # 将查询结果转换为字典列表
             model_predict_res = {'time': result['time'], 'result': result['result']}
             return ResultEntityMethod.buildSuccessResult(data=model_predict_res)
-        except Exception:
-            logger.exception("[opc数据导出] - opc数据导出未知异常")
+        except Exception as e:
+            logger.exception(f"[opc数据导出] - opc数据导出异常: {e}")
             return ResultEntityMethod.buildFailedResult(message="模型调用失败")
 
     @staticmethod

@@ -1,4 +1,6 @@
 import logging
+import os
+import csv
 import socket
 from datetime import datetime
 from zoneinfo import ZoneInfo
@@ -201,3 +203,75 @@ class DataCollectService:
         except Exception:
             logger.exception("[SQLite] predict_result 失败")
             return ResultEntityMethod.buildFailedResult(message="本地数据读取失败")
+
+    @staticmethod
+    def predict_export(request) -> ResultEntity:
+        """预测数据导出为 CSV 文件"""
+        try:
+            # 1) 解析时间范围
+            start_raw = getattr(request, "startTime", None)
+            end_raw = getattr(request, "endTime", None)
+
+            start_dt = standardize_dt(parse_dt_maybe(start_raw))
+            end_dt = standardize_dt(parse_dt_maybe(end_raw))
+
+            if not start_dt:
+                return ResultEntityMethod.buildSuccessResult(message="没有开始时间", data={
+                    "dataList": [],
+                    "total": 0
+                })
+
+            if start_dt and not end_dt:
+                end_dt = datetime.now()
+
+            if start_dt and end_dt and start_dt > end_dt:
+                start_dt, end_dt = end_dt, start_dt
+
+            start_ts = dt_to_ts(start_dt)
+            end_ts = dt_to_ts(end_dt)
+
+            # 2) 查询预测数据
+            records = query_predict_by_time_range(start_ts, end_ts)
+
+            if not records:
+                return ResultEntityMethod.buildFailedResult(message="没有数据可导出")
+
+            # 3) 生成 CSV 文件
+            export_dir = os.path.join(os.getcwd(), "export")
+            os.makedirs(export_dir, exist_ok=True)
+
+            file_name = f"predict_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+            file_path = os.path.join(export_dir, file_name)
+
+            # CSV 表头
+            csv_headers = ["time", "pressure", "c5", "bing_xi", "gan_dian"]
+
+            try:
+                with open(file_path, "w", encoding="utf-8-sig", newline="") as f:
+                    writer = csv.DictWriter(f, fieldnames=csv_headers, extrasaction='ignore')
+                    writer.writeheader()
+                    for record in records:
+                        # 只保留需要的字段
+                        row = {
+                            "time": record.get("time", ""),
+                            "pressure": record.get("pressure", ""),
+                            "c5": record.get("c5", ""),
+                            "bing_xi": record.get("bing_xi", ""),
+                            "gan_dian": record.get("gan_dian", "")
+                        }
+                        writer.writerow(row)
+
+            except Exception as e:
+                logger.exception("[predict_export] CSV 导出失败: %s", e)
+                return ResultEntityMethod.buildFailedResult(message="CSV导出失败")
+
+            # 4) 返回结果
+            resp = {
+                "fileName": file_name,
+                "filePath": file_path
+            }
+            return ResultEntityMethod.buildSuccessResult(data=resp)
+
+        except Exception:
+            logger.exception("[predict_export] 预测数据导出失败")
+            return ResultEntityMethod.buildFailedResult(message="预测数据导出失败")

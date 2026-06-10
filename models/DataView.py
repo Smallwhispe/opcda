@@ -88,19 +88,29 @@ def parse_opc_data_to_data_view(opc_raw_data: Union[List[tuple], Dict], data_typ
         if ts_str and not first_timestamp:
             try:
                 # 清理时间字符串逻辑 (保持你原有的逻辑)
-                clean_ts_str = str(ts_str)
-                if '+' in clean_ts_str:
-                    clean_ts_str = clean_ts_str.split('+')[0]
-                elif clean_ts_str.count('-') > 2:
-                    last_dash = clean_ts_str.rfind('-')
-                    if last_dash > 10:
-                        clean_ts_str = clean_ts_str[:last_dash]
+                clean_ts_str = str(ts_str) if ts_str is not None else ""
+
+                # 确保是字符串类型后再进行 in 操作
+                if not isinstance(clean_ts_str, str):
+                    clean_ts_str = str(clean_ts_str)
+
+                # 安全检查：只有在确认是字符串后才使用 in 操作
+                try:
+                    if '+' in clean_ts_str:
+                        clean_ts_str = clean_ts_str.split('+')[0]
+                    elif clean_ts_str.count('-') > 2:
+                        last_dash = clean_ts_str.rfind('-')
+                        if last_dash > 10:
+                            clean_ts_str = clean_ts_str[:last_dash]
+                except (TypeError, AttributeError) as check_err:
+                    logger.debug(f"时间字符串检查失败: {clean_ts_str}, 错误: {check_err}")
 
                 # 注意：这里假设 timestamp 格式固定
                 dt_naive = datetime.strptime(clean_ts_str.strip(), "%Y-%m-%d %H:%M:%S.%f")
                 # 假设 LOCAL_TZ 全局变量存在
                 first_timestamp = LOCAL_TZ.localize(dt_naive)
-            except (ValueError, TypeError):
+            except (ValueError, TypeError) as e:
+                logger.debug(f"时间解析失败: {ts_str}, 错误: {e}")
                 pass
 
         # B. 处理质量 (统一转为 'Good' / 'Bad')

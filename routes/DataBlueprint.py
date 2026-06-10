@@ -218,6 +218,35 @@ def predictOne():
             ErrorCode.FAILURE.get_code(),
             "服务器内部错误",
             None)), 500
+
+@dataViewBp.route('/predictExport', methods=['POST'])
+def predictExport():
+    """预测数据导出接口"""
+    try:
+        data = request.get_json(silent=True)
+        if not data:
+            return jsonify(ResultEntityMethod.buildFailedResult(ErrorCode.NO_PARAM.get_code(), ErrorCode.NO_PARAM.get_msg(), None)), 400
+
+        predictResultReq = PredictResultReq.model_validate(data)
+
+        # 调用业务逻辑
+        result_data = DataCollectService.predict_export(predictResultReq)
+
+        if result_data.success:
+            response = DataExportRes(
+                fileName=result_data.data['fileName'],
+                filePath=result_data.data['filePath'],
+            )
+            return jsonify(ResultEntityMethod.buildSuccessResult(ErrorCode.SUCCESS.get_code(), ErrorCode.SUCCESS.get_msg(), response.model_dump())), 200
+        else:
+            return jsonify(ResultEntityMethod.buildFailedResult(ErrorCode.SERVICE_FAILURE.get_code(), ErrorCode.SERVICE_FAILURE.get_msg(), None)), 500
+
+    except ValidationError as e:
+        return jsonify(ResultEntityMethod.buildFailedResult(ErrorCode.VALID_FAILURE.get_code(), ErrorCode.VALID_FAILURE.get_msg(), None)), 400
+    except Exception as e:
+        logger.error("[预测数据导出] - 预测数据导出未知失败: %s", e, exc_info=True)
+        return jsonify(ResultEntityMethod.buildFailedResult(ErrorCode.FAILURE.get_code(), ErrorCode.FAILURE.get_msg(), None)), 500
+
 @dataViewBp.route('/dataPreview', methods=['POST'])
 def dataPreview():
     try:

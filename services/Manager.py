@@ -45,7 +45,7 @@ class Manager:
 
         # # 使用线程池启动定时任务
         self.scheduler_executor.submit(self.schedule_database_refresh)
-        # self.scheduler_executor.submit(self.schedule_model_predict)
+        self.scheduler_executor.submit(self.schedule_model_predict)
 
         # 2. 启动 OPC UA Server (新增逻辑)
         # 必须使用独立的 Thread，因为它是 asyncio 的死循环，不能阻塞当前线程
@@ -85,20 +85,26 @@ class Manager:
         logger.info("[opc数据刷新] - opc数据刷新中")
         try:
             # --- 关键修改：每次执行任务时，动态获取(或重连)客户端 ---
+            logger.info("[opc数据刷新] - 步骤1: 获取OPC客户端...")
             current_client = get_opc_client()
+            logger.info(f"[opc数据刷新] - 步骤1完成: 客户端 = {current_client is not None}")
 
             if current_client is None:
                 logger.error("[opc数据刷新] - 无法获取 OPC 客户端连接，跳过本次刷新")
                 return
 
             # 将获取到的 current_client 传入
+            logger.info("[opc数据刷新] - 步骤2: 从OPC客户端读取数据...")
             data_view = self.catch_data_from_opc_client(current_client)
+            logger.info(f"[opc数据刷新] - 步骤2完成: dataView = {data_view is not None}")
 
             logger.info(f"[opc数据刷新] - 获取数据dataView为: {data_view}")
             if data_view and data_view.time:
+                logger.info("[opc数据刷新] - 步骤3: 保存数据到数据库...")
                 self.save_to_database(data_view.time, data_view)
+                logger.info("[opc数据刷新] - 步骤3完成")
         except Exception as e:
-            logger.error(f"[opc数据刷新] - opc数据刷新失败: {e}")
+            logger.error(f"[opc数据刷新] - opc数据刷新失败: {e}", exc_info=True)
         logger.info("[opc数据刷新] - opc数据刷新结束")
 
     def catch_data_from_opc_client(self, opc_client: Any) -> Optional['DataView']:
@@ -122,7 +128,14 @@ class Manager:
             return None
         # logger.info(
         #     f"[opc数据刷新] - 正在从 OPC 服务器读取数据，点位列表样本: {tag_list_to_read[:5]}...")  # 仅打印前5个点位以防日志过长
-        read_data = opc_client.read(tag_list_to_read)
+        try:
+            logger.info(f"[opc数据刷新] - 正在读取 {len(tag_list_to_read)} 个点位...")
+            read_data = opc_client.read(tag_list_to_read)
+            logger.info(f"[opc数据刷新] - 读取完成，结果类型: {type(read_data)}")
+        except Exception as read_err:
+            logger.error(f"[opc数据刷新] - OPC读取异常: {read_err}", exc_info=True)
+            return None
+
         # logger.info(f"[opc数据刷新] - 读取到的原始数据样本: {read_data}")  # 仅打印前500字符以防日志过长
         try:
             # --- 3. 读取数据 (List[tuple]) ---
@@ -132,7 +145,13 @@ class Manager:
                 logger.warning("[opc数据刷新] - 未读取到任何数据")
                 return None
 
-            logger.info(f"OPC数据读取成功")
+            # 添加详细日志：打印原始数据的类型和内容样本
+            logger.info(f"OPC数据读取成功, 数据类型: {type(read_data)}, 数据长度: {len(read_data) if hasattr(read_data, '__len__') else 'N/A'}")
+            if read_data and len(read_data) > 0:
+                sample_item = read_data[0]
+                logger.info(f"数据样本: {sample_item}, 类型: {type(sample_item)}")
+                if hasattr(sample_item, '__len__') and len(sample_item) >= 4:
+                    logger.info(f"样本字段 - Tag: {type(sample_item[0])}, Val: {type(sample_item[1])}, Qual: {type(sample_item[2])}, Time: {type(sample_item[3])}")
 
             # --- 4. 直接转换 ---
             # 移除了中间的字典转换循环，直接把 read_data 列表扔给解析器
