@@ -7,7 +7,7 @@ import requests
 
 from models.PredictResult import PredictResult
 from services.predict_result import insert_predict_record
-from services.repository_sqlite import get_every_four_pick_thirty
+from services.repository_sqlite import get_every_four_pick_thirty, get_recent_120
 from services.time_utils import dt_to_ts
 from vo.ResultEntity import ResultEntityMethod, ResultEntity
 from vo.req import ModelPredictReq
@@ -223,7 +223,7 @@ class ModelService:
     @staticmethod
     def model_predict() -> ResultEntity:
         try:
-            sampled = get_every_four_pick_thirty()
+            sampled = get_recent_120()
             # 给每个 request 添加一个 inputs 字段（如果你 ModelPredictReq 有明确字段可以换掉）
             pressure_inputs = []
             c5_inputs = []

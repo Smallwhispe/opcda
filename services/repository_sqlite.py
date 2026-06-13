@@ -422,6 +422,11 @@ def query_by_time_range_with_pagination(
     return _rows_to_dicts(rows)
 
 # ---------- 可选工具：按页/按天获取最近 N 条（便于趋势展示） ----------
+def get_recent_120() -> List[Dict[str, Any]]:
+    """获取最近 120 条采样数据，保持时间升序。"""
+    return get_recent_n(n=120)
+
+
 def get_every_four_pick_thirty() -> List[Dict[str, Any]]:
     """
     从最新数据中每 4 条取 1 条，最终取 30 条
