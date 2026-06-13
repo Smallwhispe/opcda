@@ -280,6 +280,7 @@ class ModelService:
     def build_pressure_inputs(req: Dict[str, Any]) -> List[Dict[str, Any]]:
         rec = req.get("values", {})
         pressure_inputs = [{
+            "TimeStamp": req.get("time").strftime("%Y-%m-%d %H:%M:%S") if req.get("time") else None,
             "ARG2_TI1352A_PV": rec["TI1352A_DACA_PV"],
             "ARG2_TI1329_PV": rec.get("TI1329_DACA_PV"),
             "ARG2_TI1328_PV": rec.get("TI1328_DACA_PV"),
@@ -298,6 +299,7 @@ class ModelService:
     def build_c5_inputs(req: Dict[str, Any]) -> List[Dict[str, Any]]:
         rec = req.get("values", {})
         c5_inputs = [{
+            "TimeStamp": req.get("time").strftime("%Y-%m-%d %H:%M:%S") if req.get("time") else None,
             "ARG2_TI1352A_PV": rec.get("TI1352A_DACA_PV"),
             "ARG2_TI1329_PV": rec.get("TI1329_DACA_PV"),
             "ARG2_TI1328_PV": rec.get("TI1328_DACA_PV"),
@@ -316,6 +318,7 @@ class ModelService:
     def build_bing_xi_inputs(req: Dict[str, Any]) -> List[Dict[str, Any]]:
         rec = req.get("values", {})
         bing_xi_inputs = [{
+            "TimeStamp": req.get("time").strftime("%Y-%m-%d %H:%M:%S") if req.get("time") else None,
             "ARG2_TIC1345_PV": rec.get("TIC1345_PIDA_PV"),
             "ARG2_FIC1303_PV": rec.get("FIC1303_PIDA_PV"),
             "ARG2_FIC1210_PV": rec.get("FIC1210_PIDA_PV"),
@@ -344,6 +347,7 @@ class ModelService:
     def build_gan_dian_inputs(req: Dict[str, Any]) -> List[Dict[str, Any]]:
         rec = req.get("values", {})
         gan_dian_inputs = [{
+            "TimeStamp": req.get("time").strftime("%Y-%m-%d %H:%M:%S") if req.get("time") else None,
             "ARG2_TIC1201B_PV": rec.get("TIC1201B_PIDA_PV"),
             "ARG2_PI1204_PV": rec.get("PI1204_DACA_PV"),
             "ARG2_FIC1214_PV": rec.get("FIC1214_PIDA_PV"),
