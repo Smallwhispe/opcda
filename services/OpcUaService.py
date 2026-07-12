@@ -5,6 +5,7 @@ import sys
 import os
 from concurrent.futures import ThreadPoolExecutor
 import socket
+import ipaddress
 from cryptography import x509
 from cryptography.hazmat._oid import NameOID
 from cryptography.hazmat.primitives.asymmetric import rsa
@@ -42,6 +43,7 @@ class OpcUaService:
         # 数据库读取线程池
         self.db_executor = ThreadPoolExecutor(max_workers=1)
 
+    @staticmethod
     def generate_self_signed_cert(endpoint_ip, cert_file, key_file):
         """
         使用 cryptography 库生成自签名证书和私钥
@@ -69,12 +71,11 @@ class OpcUaService:
         # 这一步非常关键！PACE 等工业软件会严格校验 IP 是否在证书允许列表中
         alt_names = [
             x509.DNSName(u"localhost"),
-            x509.IPAddress(socket.gethostbyname(socket.gethostname())),
+            x509.IPAddress(ipaddress.ip_address(socket.gethostbyname(socket.gethostname()))),
             x509.UniformResourceIdentifier(u"urn:Predict_Result_OPC_Server")  # 与 Server Name 匹配
         ]
         # 尝试添加传入的真实 IP
         try:
-            import ipaddress
             alt_names.append(x509.IPAddress(ipaddress.ip_address(endpoint_ip)))
         except ValueError:
             logger.warning(f"IP {endpoint_ip} 格式无效，未添加到证书 SAN 中")
