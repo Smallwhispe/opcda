@@ -1,0 +1,57 @@
+# Operating-system files
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Python bytecode and tool caches
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+
+# Local Python/Conda environments
+.venv/
+venv/
+env/
+.conda/
+
+# Local configuration and secrets
+.env
+.env.*
+!.env.example
+
+# IDE/editor settings
+.idea/
+.vscode/
+*.iml
+*.swp
+*~
+
+# Frontend build copied into the backend as PyInstaller input
+/dist/
+
+# PyInstaller and release outputs
+/build/
+/build-*/
+/release/
+/.pyinstaller/
+
+# Runtime-generated files
+/logs/
+/export/
+/certificate.pem
+/private_key.pem
+*.log
+smoke-*.log
+
+# SQLite runtime side files and local database inspection exports
+/repository/history.db
+/repository/*.db-journal
+/repository/*.db-shm
+/repository/*.db-wal
+/repository/history_db_dump/
