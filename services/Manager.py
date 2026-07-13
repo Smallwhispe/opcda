@@ -11,7 +11,7 @@ from opc_connector import get_opc_client  # <-- 改为导入这个函数
 from services.DataViewService import DataViewService
 from config.Config import Config
 from services.ModelService import ModelService
-from services.OpcUaService import OpcUaService
+from services.OpcDaService import OpcDaService
 from vo.ResultEntity import ErrorCode
 
 
@@ -24,12 +24,11 @@ class Manager:
         self.database_frequency = Config.DATABASE_FREQUENCY  # 数据保存频率（秒）
 
         # 线程池 schedule有两个一个是周期的一个是执行的
-        self.scheduler_executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="Manager-Scheduler")
+        self.scheduler_executor = ThreadPoolExecutor(max_workers=3, thread_name_prefix="Manager-Scheduler")
         self.task_executor = ThreadPoolExecutor(max_workers=Config.CACHE_TASK_THREADS, thread_name_prefix="Manager-Task")
 
-        # --- 新增: OPC UA 服务实例 ---
-        self.opc_ua_service = OpcUaService()
-        self.ua_thread = None  # 用于持有线程引用
+        # 生产环境通过本机 OPC DA Server 对外发布预测结果。
+        self.opc_write_service = OpcDaService()
 
         # 控制标志
         self._running = False
@@ -47,15 +46,8 @@ class Manager:
         self.scheduler_executor.submit(self.schedule_database_refresh)
         self.scheduler_executor.submit(self.schedule_model_predict)
 
-        # 2. 启动 OPC UA Server (新增逻辑)
-        # 必须使用独立的 Thread，因为它是 asyncio 的死循环，不能阻塞当前线程
-        self.ua_thread = threading.Thread(
-            target=self.opc_ua_service.start_in_thread,
-            name="OpcUaServer-Thread",
-            daemon=True  # 设置为守护线程，主程序退出时它会自动退出
-        )
-        self.ua_thread.start()
-        logger.info("OPC UA Server 线程已启动")
+        # 2. 启动与生产 EXE 一致的 OPC DA 预测结果写入服务。
+        self.scheduler_executor.submit(self.opc_write_service.run)
 
         logger.info("Manager服务启动完成")
 
@@ -194,9 +186,8 @@ class Manager:
         logger.info("Manager服务关闭中...")
         self._running = False
 
-        # 停止 UA 服务标志
-        if self.opc_ua_service:
-            self.opc_ua_service.stop()
+        if self.opc_write_service:
+            self.opc_write_service.stop()
 
         # 关闭线程池
         self.scheduler_executor.shutdown(wait=False, cancel_futures=True)
